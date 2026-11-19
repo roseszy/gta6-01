@@ -1,6 +1,7 @@
-// The wanted system: stars 0-5, police cars that hunt the player, and cops on
-// foot who try to arrest them. Crimes add stars; staying clean and out of
-// sight lets the heat cool off.
+// The wanted system: a heat level of 0–5 stars, police cars that hunt the
+// player down, and officers on foot who try to make an arrest. Crimes raise
+// the heat; staying out of sight while the heat is on lets it cool off one
+// star at a time.
 import { clamp, dist2 } from './util.js';
 import { createCarMesh, DriveCar } from './vehicles.js';
 import { createPersonMesh } from './player.js';
@@ -21,12 +22,14 @@ export class WantedSystem {
     this.busted = false;
   }
 
-  addStars(n, reason) {
+  /** Raise (or set) the heat. Returns the new star count. */
+  addStars(n) {
     this.stars = clamp(this.stars + n, 0, MAX_STARS);
     this.coolTimer = 0;
     return this.stars;
   }
 
+  /** Drop the heat to zero and clear every officer from the streets. */
   clear() {
     this.stars = 0;
     this.coolTimer = 0;
@@ -37,18 +40,22 @@ export class WantedSystem {
     this.cops = [];
   }
 
-  wantedCount() {
+  heat() {
     return this.stars;
   }
 
-  /** How many police cars the heat calls for. */
-  targetPoliceCars() {
-    return this.stars === 0 ? 0 : this.stars <= 1 ? 1 : this.stars <= 2 ? 2 : this.stars <= 3 ? 3 : 4;
+  /** How many cruisers the current heat calls for: 1 at one star, up to 4. */
+  carsForHeat() {
+    if (this.stars === 0) return 0;
+    if (this.stars <= 1) return 1;
+    if (this.stars <= 2) return 2;
+    if (this.stars <= 3) return 3;
+    return 4;
   }
 
-  spawnPoliceCar(playerPos) {
+  /** Send a cruiser in from a street a little way off. */
+  dispatchCar(playerPos) {
     const mesh = createCarMesh(0x1a1a22, 'police');
-    // Appear on a street a little way from the player.
     const angle = this.rng() * Math.PI * 2;
     const d = 55 + this.rng() * 30;
     const x = clamp(playerPos.x + Math.sin(angle) * d, 8, 478);
@@ -63,7 +70,8 @@ export class WantedSystem {
     return car;
   }
 
-  spawnCop(playerPos) {
+  /** Send an officer on foot in from nearby. */
+  dispatchOfficer(playerPos) {
     const mesh = createPersonMesh({ shirt: 0x1c2f55, pants: 0x1c2f55, skin: 0xc98d64 });
     const angle = this.rng() * Math.PI * 2;
     mesh.position.set(
@@ -77,10 +85,11 @@ export class WantedSystem {
     return cop;
   }
 
+  /** One step: cool-off, spawn to match the heat, chase, ram, arrest. */
   step(dt, player, playerCar) {
     const px = playerCar ? playerCar.pos.x : player.x;
     const pz = playerCar ? playerCar.pos.z : player.z;
-    // Cool off: no crime and no police nearby for a while drops a star.
+    // Cool-off: no police within 70 m for 20 s drops a star.
     if (this.stars > 0) {
       let nearestPolice = Infinity;
       for (const c of this.policeCars) nearestPolice = Math.min(nearestPolice, dist2(px, pz, c.pos.x, c.pos.z));
@@ -95,37 +104,41 @@ export class WantedSystem {
         this.coolTimer = 0;
       }
     }
-    // Spawn police to match the heat.
+    // Top the patrol up to match the heat.
     this.spawnTimer -= dt;
-    const wantCars = this.targetPoliceCars();
     if (this.stars > 0 && this.spawnTimer <= 0) {
-      if (this.policeCars.length < wantCars) this.spawnPoliceCar({ x: px, z: pz });
-      if (!playerCar && this.cops.length < Math.min(3, this.stars)) this.spawnCop({ x: px, z: pz });
+      if (this.policeCars.length < this.carsForHeat()) this.dispatchCar({ x: px, z: pz });
+      if (!playerCar && this.cops.length < Math.min(3, this.stars)) this.dispatchOfficer({ x: px, z: pz });
       this.spawnTimer = 3;
     }
-    // Police cars chase: steer toward the player, ram to slow them down.
+    // Cruisers chase: steer at the player and ram to slow them down.
     for (const car of this.policeCars) {
       const dx = px - car.pos.x;
       const dz = pz - car.pos.z;
       const d = Math.hypot(dx, dz);
       const wantYaw = Math.atan2(dx, dz);
-      // DriveCar: positive steer turns right (yaw decreases), so negate the angle error.
+      // DriveCar turns right when steer is positive (yaw drops), so flip
+      // the angle error to steer toward the player.
       const steer = -clamp(((wantYaw - car.yaw + Math.PI * 3) % (Math.PI * 2)) - Math.PI, -1, 1);
       const throttle = d > 6 ? 1 : 0.2;
       car.step(dt, throttle, steer, false, this.city, [...this.policeCars]);
-      // Ram: if close, shove the player's car and slow it.
       if (playerCar && d < 4.5) {
         playerCar.speed *= Math.max(0, 1 - dt * 2.2);
         playerCar.health = Math.max(0, playerCar.health - dt * 6);
       }
     }
-    // Cops on foot chase the player and try to arrest them.
+    // Officers on foot chase the player; standing next to one for 1.6 s
+    // straight gets Deke arrested.
     this.busted = false;
     if (!playerCar) {
-      let closest = null; let closestD = Infinity;
+      let closest = null;
+      let closestD = Infinity;
       for (const cop of this.cops) {
         const d = dist2(player.x, player.z, cop.mesh.position.x, cop.mesh.position.z);
-        if (d < closestD) { closestD = d; closest = cop; }
+        if (d < closestD) {
+          closestD = d;
+          closest = cop;
+        }
         const dx = player.x - cop.mesh.position.x;
         const dz = player.z - cop.mesh.position.z;
         const len = Math.hypot(dx, dz) || 1;
@@ -146,13 +159,13 @@ export class WantedSystem {
     } else {
       this.arrestTimer = 0;
     }
-    // Flash the police light bars.
+    // Flash the light bars red and blue.
     const on = Math.floor(performance.now() / 280) % 2 === 0;
     for (const car of this.policeCars) {
       const bar = car.mesh.getObjectByName('lightbar');
       if (bar) bar.material.emissive.setHex(on ? 0x2244ff : 0xff2222);
     }
-    // Despawn police that fell far behind when the heat is gone.
+    // When the heat is gone, thin out patrols that fell far behind.
     if (this.stars === 0) {
       for (let i = this.policeCars.length - 1; i >= 0; i -= 1) {
         const c = this.policeCars[i];

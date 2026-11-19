@@ -1,8 +1,8 @@
-// Solmar Heat — boot and the one loop. The game moves between title, play,
-// paused and end screens; the world advances in fixed 1/60 s steps. The
-// ?shot=start|drive|chase|mission query stages a deterministic screenshot
-// scene instead of running the loop, and ?nogl=1 runs the logic with no
-// renderer (for headless checks).
+// Solmar Heat — boot and the one loop. The game moves between the title,
+// play, paused and end screens; the world advances in fixed 1/60 s steps.
+// ?shot=start|drive|chase|mission stages a deterministic screenshot scene
+// instead of running the loop, and ?nogl=1 runs the logic with no renderer
+// (for headless checks).
 import * as THREE from 'three';
 import { Input } from './input.js';
 import { City, ANCHORS, CITY } from './city.js';
@@ -16,7 +16,7 @@ import { MissionManager, MISSIONS, DEBT } from './missions.js';
 import { Hud } from './hud.js';
 import { AudioEngine } from './audio.js';
 import { stageShot } from './shots.js';
-import { clamp, dist2, formatMoney, mulberry32 } from './util.js';
+import { clamp, dist2, formatMoney, seededRandom } from './util.js';
 
 const STEP = 1 / 60;
 const MAX_FRAME = 0.25;
@@ -31,11 +31,10 @@ const noGL = params.get('nogl') === '1';
 class Game {
   constructor() {
     this.canvas = document.getElementById('game');
-    this.status = document.getElementById('status');
     this.input = new Input(this.canvas);
     this.audio = new AudioEngine();
     this.hud = new Hud();
-    this.rng = mulberry32(seed);
+    this.rng = seededRandom(seed);
     this.state = 'title';
     this.endKind = null;
     this.money = 0;
@@ -60,13 +59,13 @@ class Game {
 
     this.city = new City(this.scene, seed);
     this.player = new Player(this.scene);
-    this.traffic = new TrafficSystem(this.scene, this.city, mulberry32(seed + 11));
-    this.peds = new PedestrianSystem(this.scene, this.city, mulberry32(seed + 23));
-    this.wanted = new WantedSystem(this.scene, this.city, mulberry32(seed + 37));
-    this.combat = new Combat(this.scene, mulberry32(seed + 51));
-    this.activities = new Activities(this.scene, this.city, mulberry32(seed + 67));
+    this.traffic = new TrafficSystem(this.scene, this.city, seededRandom(seed + 11));
+    this.peds = new PedestrianSystem(this.scene, this.city, seed + 23);
+    this.wanted = new WantedSystem(this.scene, this.city, seededRandom(seed + 37));
+    this.combat = new Combat(this.scene, seededRandom(seed + 51));
+    this.activities = new Activities(this.scene, this.city, seededRandom(seed + 67));
     this.missions = new MissionManager(this.scene);
-    this.parkedCars = this.traffic.spawnParked(this.scene, mulberry32(seed + 83), 8);
+    this.parkedCars = this.traffic.spawnParked(this.scene, seededRandom(seed + 83), 8);
 
     this.traffic.spawn(16);
     this.peds.spawn(26);
@@ -76,8 +75,9 @@ class Game {
     window.addEventListener('resize', () => this.resize());
   }
 
+  // ---------- sky and light ----------
   setupSkyAndLights() {
-    // Gradient sky dome, warm at the horizon, blue above.
+    // Gradient sky dome: warm at the horizon, blue above.
     const skyGeo = new THREE.SphereGeometry(1200, 24, 12);
     const skyMat = new THREE.ShaderMaterial({
       side: THREE.BackSide,
@@ -88,8 +88,10 @@ class Game {
         low: { value: new THREE.Color(0xffd9a0) },
       },
       vertexShader: 'varying vec3 vP; void main(){ vP = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-      fragmentShader: `varying vec3 vP; uniform vec3 top; uniform vec3 mid; uniform vec3 low;
-        void main(){ float h = normalize(vP).y; vec3 c = h > 0.25 ? mix(mid, top, smoothstep(0.25, 0.8, h)) : mix(low, mid, smoothstep(-0.05, 0.25, h)); gl_FragColor = vec4(c, 1.0); }`,
+      fragmentShader: 'varying vec3 vP; uniform vec3 top; uniform vec3 mid; uniform vec3 low;'
+        + ' void main(){ float h = normalize(vP).y;'
+        + ' vec3 c = h > 0.25 ? mix(mid, top, smoothstep(0.25, 0.8, h)) : mix(low, mid, smoothstep(-0.05, 0.25, h));'
+        + ' gl_FragColor = vec4(c, 1.0); }',
     });
     this.sky = new THREE.Mesh(skyGeo, skyMat);
     this.scene.add(this.sky);
@@ -105,11 +107,11 @@ class Game {
     this.sun.shadow.bias = -0.0006;
     this.scene.add(this.sun);
     this.scene.add(this.sun.target);
-    const hemi = new THREE.HemisphereLight(0xbfd9ff, 0x8a7a5a, 0.9);
-    this.scene.add(hemi);
+    this.scene.add(new THREE.HemisphereLight(0xbfd9ff, 0x8a7a5a, 0.9));
     this.updateSun();
   }
 
+  /** The sun arcs across the sky as the in-game clock moves. */
   updateSun() {
     const t = clamp((this.clockMinutes - 360) / 720, 0, 1);
     const el = THREE.MathUtils.degToRad(15 + Math.sin(t * Math.PI) * 47);
@@ -124,10 +126,13 @@ class Game {
   }
 
   setupRenderer() {
-    if (noGL) { this.renderer = null; return; }
+    if (noGL) {
+      this.renderer = null;
+      return;
+    }
     try {
       this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true });
-    } catch (e) {
+    } catch {
       this.webglOK = false;
       this.renderer = null;
       return;
@@ -142,7 +147,8 @@ class Game {
 
   resize() {
     if (!this.renderer) return;
-    const w = window.innerWidth; const h = window.innerHeight;
+    const w = window.innerWidth;
+    const h = window.innerHeight;
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
@@ -157,7 +163,7 @@ class Game {
     this.missions.onEvent = (type, p) => {
       if (type === 'mission-start') {
         this.hud.feed(p.intro);
-        this.hud.toast(`MISSION ${p.id} — ${p.title}`, p.reward ? `Reward ${formatMoney(p.reward)}` : '');
+        this.hud.toast(`MISSION ${p.id} — ${p.title}`, `Reward ${formatMoney(p.reward)}`);
         this.audio.mission();
       } else if (type === 'mission-complete') {
         this.money += p.reward;
@@ -175,7 +181,7 @@ class Game {
           this.missions.startMission(this.missions.index + 1);
         }
       } else if (type === 'set-wanted') {
-        if (this.wanted.stars < p) this.wanted.addStars(p - this.wanted.stars, 'mission');
+        if (this.wanted.stars < p) this.wanted.addStars(p - this.wanted.stars);
       } else if (type === 'spawn-rivals') {
         const marker = this.missions.markerPos || ANCHORS.docks;
         this.combat.spawnRivals(marker, p);
@@ -192,23 +198,26 @@ class Game {
       if (type === 'shot') {
         this.audio.shot();
         if (this.shootCrimeCooldown <= 0 && this.wanted.policeCars.length > 0) {
-          this.wanted.addStars(1, 'shooting');
+          this.wanted.addStars(1);
           this.shootCrimeCooldown = 4;
         }
       } else if (type === 'enemy-shot') {
         this.audio.enemyShot();
-        if (p.hit && this.player.damage(p.damage)) {
-          if (this.player.health <= 0) this.endGame('wasted');
+        if (p.hit && this.player.damage(p.damage) && this.player.health <= 0) {
+          this.endGame('wasted');
         }
       } else if (type === 'enemy-down') {
         this.missions.onKill();
         this.money += 50;
         this.hud.feed('Rival down. +$50 off the body.');
       } else if (type === 'ped-hit') {
-        this.wanted.addStars(1, 'assault');
+        this.wanted.addStars(1);
         this.hud.feed('You hit a pedestrian! The cops were called.');
-      } else if (type === 'punch') this.audio.punch();
-      else if (type === 'reload') this.audio.reload();
+      } else if (type === 'punch') {
+        this.audio.punch();
+      } else if (type === 'reload') {
+        this.audio.reload();
+      }
     };
     this.activities.onEvent = (type, p) => {
       if (type === 'cash') {
@@ -230,35 +239,56 @@ class Game {
     };
   }
 
-  // ---------- menus / state ----------
+  // ---------- menus and state ----------
   setState(s) {
     this.state = s;
     document.getElementById('menu-title').classList.toggle('hidden', s !== 'title');
     document.getElementById('menu-pause').classList.toggle('hidden', s !== 'paused');
     document.getElementById('menu-end').classList.toggle('hidden', s !== 'end');
-    if (s === 'playing') this.hud.show(); else this.hud.hide();
-    if (s === 'playing') this.audio.ensure();
+    if (s === 'playing') {
+      this.hud.show();
+      this.audio.ensure();
+    } else {
+      this.hud.hide();
+    }
   }
 
   bindMenus() {
     const $ = (id) => document.getElementById(id);
-    $('btn-new').addEventListener('click', () => { this.audio.ensure(); this.audio.click(); this.newGame(); });
-    $('btn-continue').addEventListener('click', () => { this.audio.ensure(); this.audio.click(); this.continueGame(); });
+    $('btn-new').addEventListener('click', () => {
+      this.audio.ensure();
+      this.audio.click();
+      this.newGame();
+    });
+    $('btn-continue').addEventListener('click', () => {
+      this.audio.ensure();
+      this.audio.click();
+      this.continueGame();
+    });
     $('btn-sound').addEventListener('click', (e) => {
       const m = this.audio.setMuted(!this.audio.muted);
       e.target.textContent = m ? 'SOUND: OFF' : 'SOUND: ON';
     });
     $('btn-resume').addEventListener('click', () => this.setState('playing'));
-    $('btn-save').addEventListener('click', () => { this.save(); this.hud.feed('Game saved.'); });
+    $('btn-save').addEventListener('click', () => {
+      this.save();
+      this.hud.feed('Game saved.');
+    });
     $('btn-restart-mission').addEventListener('click', () => {
       this.missions.restart();
       this.wanted.clear();
       this.player.resetTo(ANCHORS.garage.x, ANCHORS.garage.z + 3);
       this.setState('playing');
     });
-    $('btn-quit').addEventListener('click', () => { this.save(); this.setState('title'); });
+    $('btn-quit').addEventListener('click', () => {
+      this.save();
+      this.setState('title');
+    });
     $('btn-end-resume').addEventListener('click', () => this.setState('playing'));
-    $('btn-end-quit').addEventListener('click', () => { this.save(); this.setState('title'); });
+    $('btn-end-quit').addEventListener('click', () => {
+      this.save();
+      this.setState('title');
+    });
     document.addEventListener('visibilitychange', () => {
       if (document.hidden && this.state === 'playing') this.setState('paused');
     });
@@ -266,7 +296,11 @@ class Game {
   }
 
   hasSave() {
-    try { return !!window.localStorage.getItem(SAVE_KEY); } catch { return false; }
+    try {
+      return !!window.localStorage.getItem(SAVE_KEY);
+    } catch {
+      return false;
+    }
   }
 
   newGame() {
@@ -279,19 +313,24 @@ class Game {
     this.exitCar(true);
     this.missions.startMission(0);
     this.setState('playing');
-    this.hud.feed("Vera: \"Deke, you owe me five grand. Start simple — take any car and bring it to my garage.\"");
+    this.hud.feed('Vera: "Deke, you owe me five grand. Start simple — take any car and bring it to my garage."');
   }
 
   continueGame() {
-    if (!this.load()) { this.newGame(); return; }
+    if (!this.load()) {
+      this.newGame();
+      return;
+    }
     this.setState('playing');
   }
 
+  /** Enter play from a menu or a screenshot scene (audio optional). */
   beginPlay(opts = {}) {
     if (!opts.silent) this.audio.ensure();
     this.setState('playing');
   }
 
+  /** Screenshot scenes run the world without the title screen. */
   startShotMode() {
     this.shotMode = true;
     this.setState('playing');
@@ -330,13 +369,21 @@ class Game {
   save() {
     try {
       window.localStorage.setItem(SAVE_KEY, JSON.stringify({
-        v: 1, money: this.money, day: this.day, clock: this.clockMinutes,
+        v: 1,
+        money: this.money,
+        day: this.day,
+        clock: this.clockMinutes,
         mission: this.missions.done ? MISSIONS.length : this.missions.index,
         cashTaken: this.activities.cash.map((c) => c.taken),
-        collected: this.activities.collected, fares: this.faresDone,
-        px: this.player.x, pz: this.player.z, health: this.player.health,
+        collected: this.activities.collected,
+        fares: this.faresDone,
+        px: this.player.x,
+        pz: this.player.z,
+        health: this.player.health,
       }));
-    } catch { /* storage unavailable */ }
+    } catch {
+      // Storage unavailable — the session still plays, it just won't save.
+    }
   }
 
   load() {
@@ -351,7 +398,10 @@ class Game {
       this.player.resetTo(s.px ?? ANCHORS.garage.x, s.pz ?? ANCHORS.garage.z + 3);
       this.player.health = s.health ?? 100;
       this.activities.cash.forEach((c, i) => {
-        if (s.cashTaken && s.cashTaken[i]) { c.taken = true; c.group.visible = false; }
+        if (s.cashTaken && s.cashTaken[i]) {
+          c.taken = true;
+          c.group.visible = false;
+        }
       });
       this.activities.collected = s.collected || 0;
       const mi = Math.min(s.mission ?? 0, MISSIONS.length - 1);
@@ -389,28 +439,26 @@ class Game {
     if (!silent) this.audio.click();
   }
 
+  /** E near a car: parked and loose cars are free, traffic cars are a crime. */
   tryEnterCar() {
-    const px = this.player.x; const pz = this.player.z;
-    // Parked or loose cars first.
+    const px = this.player.x;
+    const pz = this.player.z;
     for (const car of [...this.parkedCars, ...this.looseCars]) {
       if (dist2(px, pz, car.pos.x, car.pos.z) < 4.5) {
         this.enterCar(car);
         return;
       }
     }
-    // Traffic cars: stealing one is a crime.
     const t = this.traffic.nearest(px, pz, 4.5);
     if (t) {
       this.traffic.remove(t);
-      const mesh = t.mesh;
-      const drive = new DriveCar(mesh);
-      drive.yaw = mesh.rotation.y;
+      const drive = new DriveCar(t.mesh);
+      drive.yaw = t.mesh.rotation.y;
       drive.stolen = true;
       this.looseCars.push(drive);
       this.enterCar(drive);
-      this.wanted.addStars(1, 'theft');
+      this.wanted.addStars(1);
       this.hud.feed('You jacked a car! The cops are on their way.');
-      return;
     }
   }
 
@@ -418,34 +466,49 @@ class Game {
   update(dt, override) {
     const input = this.input;
     const playing = this.state === 'playing';
-    // Clock always ticks while playing.
+    // The clock always ticks while playing.
     if (playing) {
       this.clockMinutes += dt * 0.5;
-      if (this.clockMinutes >= 1440) { this.clockMinutes -= 1440; this.day += 1; this.updateSun(); }
+      if (this.clockMinutes >= 1440) {
+        this.clockMinutes -= 1440;
+        this.day += 1;
+        this.updateSun();
+      }
       this.shootCrimeCooldown = Math.max(0, this.shootCrimeCooldown - dt);
       this.trafficHitCooldown = Math.max(0, this.trafficHitCooldown - dt);
     }
 
     // World life goes on even on the title screen.
     const playerPos = { x: this.player.x, z: this.player.z };
+    const danger = this.currentCar
+      ? [{ x: this.currentCar.pos.x, z: this.currentCar.pos.z, speed: this.currentCar.speed }]
+      : [{ x: this.player.x, z: this.player.z, speed: this.player.speed }];
     this.traffic.step(dt);
-    this.peds.step(dt, this.currentCar, playerPos);
+    this.peds.step(dt, danger);
     this.slowTrafficForPlayer();
-    this.combat.step(dt, this.player, playerPos);
+    this.combat.step(dt, playerPos);
 
     if (!playing) {
       input.endFrame();
       this.wanted.step(dt, this.player, null);
       return;
     }
-    this.activities.step(dt, this.currentCar ? { x: this.currentCar.pos.x, z: this.currentCar.pos.z } : playerPos, !!this.currentCar);
+    this.activities.step(
+      dt,
+      this.currentCar ? { x: this.currentCar.pos.x, z: this.currentCar.pos.z } : playerPos,
+      !!this.currentCar,
+    );
 
     const axes = input.moveAxes();
     const look = input.takeLook();
     const running = input.down('ShiftLeft') || input.down('ShiftRight');
 
     // Pause.
-    if (input.hit('Escape') || input.hit('KeyP')) { this.setState('paused'); input.endFrame(); return; }
+    if (input.hit('Escape') || input.hit('KeyP')) {
+      this.setState('paused');
+      input.endFrame();
+      return;
+    }
     // Mute.
     if (input.hit('KeyM')) {
       const m = this.audio.setMuted(!this.audio.muted);
@@ -457,12 +520,14 @@ class Game {
         ? override.carInput
         : { throttle: axes.y, steer: axes.x, handbrake: input.down('Space') };
       const others = [...this.looseCars, ...this.wanted.policeCars];
-      for (const t of this.traffic.cars) others.push({ pos: t.mesh.position, speed: t.speed });
+      for (const t of this.traffic.cars) {
+        others.push({ pos: t.mesh.position, speed: t.speed });
+      }
       const prevSpeed = this.currentCar.speed;
       this.currentCar.step(dt, carInput.throttle, carInput.steer, carInput.handbrake, this.city, others);
       this.camOrbit = clamp(this.camOrbit - look.dx * 0.0028, -1.1, 1.1);
       this.camOrbit *= Math.max(0, 1 - dt * 1.4);
-      // Hard impacts hurt the car.
+      // A hard impact wrecks the car a little.
       if (prevSpeed > 14 && Math.abs(this.currentCar.speed) < prevSpeed * 0.4) {
         this.currentCar.health -= 12;
         this.audio.crash();
@@ -476,12 +541,12 @@ class Game {
         this.hud.toast('YOUR RIDE IS WRECKED', 'Find another car.');
         this.hud.feed('Your car is wrecked.');
       }
-      // Running over pedestrians is a crime.
+      // Running over a pedestrian is a crime.
       if (Math.abs(this.currentCar.speed) > 6 && this.trafficHitCooldown <= 0) {
         const ped = this.peds.nearest(this.currentCar.pos.x, this.currentCar.pos.z, 2.4);
         if (ped) {
           this.peds.remove(ped);
-          this.wanted.addStars(1, 'hit-and-run');
+          this.wanted.addStars(1);
           this.currentCar.speed *= 0.7;
           this.audio.crash();
           this.trafficHitCooldown = 1.5;
@@ -501,10 +566,10 @@ class Game {
         }
       }
       if (input.takeClick() && !this.shotMode) {
-        const hit = this.combat.shoot(this.camera, this.player, this.wanted);
+        const hit = this.combat.shoot(this.camera);
         if (hit && hit.kind === 'enemy') this.hud.feed('Hit!');
       }
-      if (input.hit('KeyF')) this.combat.punch(this.player, this.peds.peds, this.wanted);
+      if (input.hit('KeyF')) this.combat.punch(this.player, this.peds.peds);
       if (input.hit('KeyR')) this.combat.reload();
       // Traffic can run the player down.
       for (const t of this.traffic.cars) {
@@ -517,7 +582,7 @@ class Game {
       }
     }
 
-    // Health slowly recovers out of combat.
+    // Health slowly recovers when there is no heat and no fight.
     if (this.wanted.stars === 0 && this.combat.enemies.length === 0) {
       this.player.heal(dt * 2);
     }
@@ -530,13 +595,16 @@ class Game {
     const speedNorm = this.currentCar ? clamp(Math.abs(this.currentCar.speed) / 42, 0, 1) : 0;
     this.audio.setEngine(speedNorm, !!this.currentCar);
     let nearestPolice = Infinity;
-    for (const c of this.wanted.policeCars) nearestPolice = Math.min(nearestPolice, dist2(this.player.x, this.player.z, c.pos.x, c.pos.z));
+    for (const c of this.wanted.policeCars) {
+      nearestPolice = Math.min(nearestPolice, dist2(this.player.x, this.player.z, c.pos.x, c.pos.z));
+    }
     this.audio.setSiren(this.wanted.stars > 0 && nearestPolice < 90);
 
     this.updateHud(dt);
     input.endFrame();
   }
 
+  /** Traffic slows for the player standing in the road. */
   slowTrafficForPlayer() {
     if (this.currentCar) return;
     for (const t of this.traffic.cars) {
@@ -550,6 +618,7 @@ class Game {
     }
   }
 
+  /** Build the HUD state for this frame. */
   updateHud(dt) {
     const marker = this.missions.markerPos;
     const s = {
@@ -576,6 +645,7 @@ class Game {
     this.hud.update(dt, s);
   }
 
+  /** Chase camera behind the car, or the player's third-person camera. */
   updateCamera(dt) {
     if (this.state === 'title') {
       this.cinematicCamera(dt);
@@ -596,6 +666,7 @@ class Game {
     }
   }
 
+  /** Slow orbit over the city for the title screen. */
   cinematicCamera(dt = 0) {
     this.cineAngle += dt * 0.02;
     const r = 250;
@@ -607,9 +678,9 @@ class Game {
 
   frame(now) {
     requestAnimationFrame((t) => this.frame(t));
-    if (!this._last) this._last = now;
-    let acc = Math.min((now - this._last) / 1000, MAX_FRAME);
-    this._last = now;
+    if (!this.lastT) this.lastT = now;
+    let acc = Math.min((now - this.lastT) / 1000, MAX_FRAME);
+    this.lastT = now;
     while (acc >= STEP) {
       this.update(STEP, null);
       acc -= STEP;
@@ -619,16 +690,19 @@ class Game {
   }
 
   start() {
-    document.getElementById('loading').remove();
     if (shotName) {
+      document.getElementById('loading').remove();
       stageShot(shotName, this);
       return;
     }
     this.setState('title');
     if (!this.webglOK) {
-      document.getElementById('loading').textContent = 'WebGL is unavailable in this browser — Solmar Heat needs it to render the city.';
-      document.getElementById('loading').style.display = 'flex';
+      const loading = document.getElementById('loading');
+      loading.textContent = 'WebGL is unavailable in this browser — Solmar Heat needs it to render the city.';
+      loading.style.display = 'flex';
+      return;
     }
+    document.getElementById('loading').remove();
     requestAnimationFrame((t) => this.frame(t));
   }
 }

@@ -1,16 +1,16 @@
-// Keyboard and mouse input: a held-keys set, edge-triggered presses, and
-// camera look deltas from pointer lock (with a drag fallback when the
-// pointer is not locked).
+// Keyboard and mouse: held keys, edge-triggered presses, and camera look
+// from pointer lock (with a drag fallback when the pointer is not locked).
+// The game polls this once a frame and calls endFrame() when it is done.
 export class Input {
   constructor(canvas) {
+    this.canvas = canvas;
     this.keys = new Set();
     this.pressed = new Set();
-    this.mouseDX = 0;
-    this.mouseDY = 0;
+    this.lookX = 0;
+    this.lookY = 0;
     this.mouseDown = false;
-    this.mouseClicked = false;
+    this.clicked = false;
     this.locked = false;
-    this.canvas = canvas;
 
     window.addEventListener('keydown', (e) => {
       if (e.repeat) return;
@@ -24,8 +24,8 @@ export class Input {
     canvas.addEventListener('mousedown', (e) => {
       if (e.button !== 0) return;
       this.mouseDown = true;
-      this.mouseClicked = true;
-      if (!this.locked) canvas.requestPointerLock?.();
+      this.clicked = true;
+      if (!this.locked && canvas.requestPointerLock) canvas.requestPointerLock();
     });
     window.addEventListener('mouseup', (e) => {
       if (e.button === 0) this.mouseDown = false;
@@ -34,23 +34,28 @@ export class Input {
       this.locked = document.pointerLockElement === canvas;
     });
     document.addEventListener('mousemove', (e) => {
-      if (this.locked) {
-        this.mouseDX += e.movementX;
-        this.mouseDY += e.movementY;
-      } else if (this.mouseDown) {
-        this.mouseDX += e.movementX || 0;
-        this.mouseDY += e.movementY || 0;
+      if (this.locked || this.mouseDown) {
+        this.lookX += e.movementX || 0;
+        this.lookY += e.movementY || 0;
       }
     });
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
   }
 
-  down(code) { return this.keys.has(code); }
-  hit(code) { return this.pressed.has(code); }
+  /** Is the key held down right now? */
+  down(code) {
+    return this.keys.has(code);
+  }
+
+  /** Was the key pressed since the last endFrame()? */
+  hit(code) {
+    return this.pressed.has(code);
+  }
 
   /** Movement axes in -1..1: x is strafe right, y is forward. */
   moveAxes() {
-    let x = 0; let y = 0;
+    let x = 0;
+    let y = 0;
     if (this.down('KeyW') || this.down('ArrowUp')) y += 1;
     if (this.down('KeyS') || this.down('ArrowDown')) y -= 1;
     if (this.down('KeyD') || this.down('ArrowRight')) x += 1;
@@ -58,19 +63,23 @@ export class Input {
     return { x, y };
   }
 
-  /** Consume the look delta accumulated since the last frame. */
+  /** Take the look delta built up since the last frame (and clear it). */
   takeLook() {
-    const dx = this.mouseDX; const dy = this.mouseDY;
-    this.mouseDX = 0; this.mouseDY = 0;
-    return { dx, dy };
+    const out = { dx: this.lookX, dy: this.lookY };
+    this.lookX = 0;
+    this.lookY = 0;
+    return out;
   }
 
+  /** Was the left mouse button clicked since the last call? */
   takeClick() {
-    const c = this.mouseClicked;
-    this.mouseClicked = false;
-    return c;
+    const was = this.clicked;
+    this.clicked = false;
+    return was;
   }
 
-  /** Call at the end of each frame: clears edge-triggered presses. */
-  endFrame() { this.pressed.clear(); }
+  /** End of frame: forget this frame's edge-triggered presses. */
+  endFrame() {
+    this.pressed.clear();
+  }
 }

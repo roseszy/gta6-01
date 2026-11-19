@@ -5,59 +5,58 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Solmar Heat — Open-World Crime Game</title>
 <style>
-  html, body { margin: 0; height: 100%; overflow: hidden; background: #0b1020; font-family: 'Segoe UI', system-ui, sans-serif; }
-  #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
-  #status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #101623; font-family: Verdana, Geneva, system-ui, sans-serif; }
+  #game { position: fixed; left: 0; top: 0; width: 100vw; height: 100vh; display: block; touch-action: none; }
   .hidden { display: none !important; }
   /* ---------- HUD ---------- */
-  #hud { position: fixed; inset: 0; pointer-events: none; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.7); }
-  #hud-top-left { position: absolute; top: 14px; left: 16px; }
-  #stars { font-size: 26px; letter-spacing: 2px; color: #ffd23e; }
-  #stars .off { color: rgba(255,255,255,.25); }
-  #money { font-size: 26px; font-weight: 800; color: #7dff9a; margin-top: 2px; }
-  #health-wrap { margin-top: 6px; width: 190px; height: 12px; background: rgba(0,0,0,.55); border: 1px solid rgba(255,255,255,.5); border-radius: 6px; overflow: hidden; }
-  #health-bar { height: 100%; width: 100%; background: linear-gradient(90deg, #ff5b5b, #ff9d5b); }
-  #hud-top-right { position: absolute; top: 14px; right: 16px; text-align: right; }
-  #clock { font-size: 22px; font-weight: 700; }
-  #day-label { font-size: 13px; opacity: .85; }
-  #objective { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); text-align: center; max-width: 560px; }
-  #objective-title { font-size: 17px; font-weight: 800; color: #ffd23e; }
-  #objective-text { font-size: 15px; margin-top: 2px; }
-  #objective-dist { font-size: 13px; opacity: .85; }
-  #feed { position: absolute; left: 16px; bottom: 250px; max-width: 380px; font-size: 14px; }
-  #feed div { margin-top: 4px; background: rgba(0,0,0,.45); padding: 4px 8px; border-radius: 4px; }
-  #minimap-wrap { position: absolute; left: 16px; bottom: 16px; border: 2px solid rgba(255,255,255,.65); border-radius: 8px; overflow: hidden; background: #0d1b2e; box-shadow: 0 2px 10px rgba(0,0,0,.5); }
+  #hud { position: fixed; left: 0; top: 0; right: 0; bottom: 0; pointer-events: none; color: #fff; text-shadow: 0 2px 4px rgba(0,0,0,.75); }
+  #hud-top-left { position: absolute; top: 18px; left: 20px; }
+  #stars { font-size: 24px; letter-spacing: 3px; color: #ffcf3f; }
+  #stars .off { color: rgba(255,255,255,.22); }
+  #money { font-size: 24px; font-weight: 700; color: #86ff9e; margin-top: 4px; }
+  #health-wrap { margin-top: 8px; width: 200px; height: 10px; background: rgba(0,0,0,.6); border: 1px solid rgba(255,255,255,.45); border-radius: 5px; overflow: hidden; }
+  #health-bar { height: 100%; width: 100%; background: linear-gradient(90deg, #ff6b6b, #ffb15b); }
+  #hud-top-right { position: absolute; top: 18px; right: 20px; text-align: right; }
+  #clock { font-size: 20px; font-weight: 700; }
+  #day-label { font-size: 12px; opacity: .8; margin-top: 2px; }
+  #objective { position: absolute; top: 18px; left: 50%; transform: translateX(-50%); text-align: center; max-width: 600px; }
+  #objective-title { font-size: 16px; font-weight: 700; color: #ffcf3f; letter-spacing: 1px; }
+  #objective-text { font-size: 14px; margin-top: 3px; }
+  #objective-dist { font-size: 12px; opacity: .8; margin-top: 2px; }
+  #feed { position: absolute; left: 20px; bottom: 260px; max-width: 400px; font-size: 13px; }
+  #feed div { margin-top: 5px; background: rgba(0,0,0,.5); padding: 5px 9px; border-radius: 5px; }
+  #minimap-wrap { position: absolute; left: 20px; bottom: 20px; border: 2px solid rgba(255,255,255,.6); border-radius: 10px; overflow: hidden; background: #0d1b2e; box-shadow: 0 3px 12px rgba(0,0,0,.55); }
   #minimap { display: block; }
-  #speedo { position: absolute; right: 16px; bottom: 16px; text-align: right; }
-  #speed { font-size: 44px; font-weight: 900; line-height: 1; }
-  #speed-unit { font-size: 13px; opacity: .8; }
-  #weapon { font-size: 17px; font-weight: 700; margin-top: 4px; }
-  #hint { position: absolute; right: 16px; bottom: 110px; font-size: 13px; text-align: right; opacity: .85; line-height: 1.5; }
-  #crosshair { position: absolute; left: 50%; top: 50%; width: 22px; height: 22px; transform: translate(-50%,-50%); }
+  #speedo { position: absolute; right: 20px; bottom: 20px; text-align: right; }
+  #speed { font-size: 40px; font-weight: 800; line-height: 1; }
+  #speed-unit { font-size: 12px; opacity: .8; }
+  #weapon { font-size: 16px; font-weight: 700; margin-top: 5px; }
+  #hint { position: absolute; right: 20px; bottom: 118px; font-size: 12px; text-align: right; opacity: .8; line-height: 1.6; }
+  #crosshair { position: absolute; left: 50%; top: 50%; width: 20px; height: 20px; transform: translate(-50%,-50%); }
   #crosshair::before, #crosshair::after { content: ''; position: absolute; background: #fff; box-shadow: 0 0 3px #000; }
-  #crosshair::before { left: 10px; top: 0; width: 2px; height: 22px; }
-  #crosshair::after { left: 0; top: 10px; width: 22px; height: 2px; }
-  #toast { position: absolute; left: 50%; top: 34%; transform: translateX(-50%); font-size: 30px; font-weight: 900; color: #ffd23e; text-align: center; }
-  #toast small { display: block; font-size: 17px; color: #fff; font-weight: 600; margin-top: 6px; }
+  #crosshair::before { left: 9px; top: 0; width: 2px; height: 20px; }
+  #crosshair::after { left: 0; top: 9px; width: 20px; height: 2px; }
+  #toast { position: absolute; left: 50%; top: 32%; transform: translateX(-50%); font-size: 28px; font-weight: 800; color: #ffcf3f; text-align: center; }
+  #toast small { display: block; font-size: 16px; color: #fff; font-weight: 600; margin-top: 8px; }
   /* ---------- Menus ---------- */
-  .menu { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: linear-gradient(180deg, rgba(10,16,40,.55), rgba(10,16,40,.82)); color: #fff; z-index: 10; }
-  .menu-inner { text-align: center; max-width: 640px; padding: 24px; }
-  .game-title { font-size: 64px; font-weight: 900; letter-spacing: 4px; margin: 0; color: #ffd23e; text-shadow: 0 4px 0 #c22e2e, 0 8px 24px rgba(0,0,0,.6); }
-  .game-sub { font-size: 18px; letter-spacing: 6px; color: #7dd8ff; margin: 4px 0 18px; }
-  .story { font-size: 15px; line-height: 1.6; opacity: .92; margin: 0 auto 20px; max-width: 560px; }
-  .btn { pointer-events: auto; cursor: pointer; display: inline-block; margin: 6px; padding: 13px 30px; font-size: 17px; font-weight: 800; letter-spacing: 1px; color: #111; background: #ffd23e; border: none; border-radius: 8px; box-shadow: 0 4px 0 #b98a00; }
-  .btn:active { transform: translateY(3px); box-shadow: 0 1px 0 #b98a00; }
-  .btn.ghost { background: rgba(255,255,255,.14); color: #fff; box-shadow: 0 4px 0 rgba(255,255,255,.25); }
-  .controls { font-size: 13.5px; line-height: 1.9; opacity: .9; margin-top: 18px; }
-  .controls b { color: #ffd23e; }
-  .big-msg { font-size: 44px; font-weight: 900; margin: 0 0 8px; }
-  .big-msg.red { color: #ff5b5b; } .big-msg.gold { color: #ffd23e; }
-  #loading { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: #0b1020; color: #ffd23e; font-size: 20px; font-weight: 700; z-index: 20; }
+  .menu { position: fixed; left: 0; top: 0; right: 0; bottom: 0; display: flex; align-items: center; justify-content: center; background: linear-gradient(180deg, rgba(8,14,36,.5), rgba(8,14,36,.85)); color: #fff; z-index: 10; }
+  .menu-inner { text-align: center; max-width: 680px; padding: 28px; }
+  .game-title { font-size: 58px; font-weight: 800; letter-spacing: 6px; margin: 0; color: #ffcf3f; text-shadow: 0 3px 0 #c22e2e, 0 10px 28px rgba(0,0,0,.65); }
+  .game-sub { font-size: 16px; letter-spacing: 5px; color: #7dd8ff; margin: 6px 0 20px; }
+  .story { font-size: 14px; line-height: 1.7; opacity: .93; margin: 0 auto 22px; max-width: 580px; }
+  .btn { pointer-events: auto; cursor: pointer; display: inline-block; margin: 5px; padding: 12px 28px; font-size: 16px; font-weight: 700; letter-spacing: 1px; color: #141414; background: #ffcf3f; border: none; border-radius: 10px; box-shadow: 0 4px 0 #a67c00; }
+  .btn:active { transform: translateY(3px); box-shadow: 0 1px 0 #a67c00; }
+  .btn.ghost { background: rgba(255,255,255,.13); color: #fff; box-shadow: 0 4px 0 rgba(255,255,255,.22); }
+  .controls { font-size: 13px; line-height: 2; opacity: .88; margin-top: 20px; }
+  .controls b { color: #ffcf3f; }
+  .big-msg { font-size: 40px; font-weight: 800; margin: 0 0 10px; }
+  .big-msg.red { color: #ff6b6b; }
+  .big-msg.gold { color: #ffcf3f; }
+  #loading { position: fixed; left: 0; top: 0; right: 0; bottom: 0; display: flex; align-items: center; justify-content: center; background: #101623; color: #ffcf3f; font-size: 19px; font-weight: 700; z-index: 20; }
 </style>
 </head>
 <body>
 <canvas id="game" aria-label="Solmar Heat: an open-world crime game in the sun-soaked city of Solmar"></canvas>
-<p id="status" role="status" aria-live="polite"></p>
 <div id="loading">Loading Solmar…</div>
 
 <div id="hud" class="hidden">
@@ -91,15 +90,17 @@
   <div class="menu-inner">
     <h1 class="game-title">SOLMAR HEAT</h1>
     <div class="game-sub">A SUN-SOAKED OPEN-WORLD CRIME STORY</div>
-    <p class="story">Solmar Bay. Palm trees, chrome, and trouble. You are <b>Dana “Deke” Reyes</b>, a getaway driver
-    who owes fixer <b>Vera Solano</b> $5,000 — and rival crew boss <b>Marcus Kade</b> wants you gone before you can pay it.
-    Steal cars, lose the cops, run the jobs, and buy your way out.</p>
+    <p class="story">Welcome to Solmar Bay — palm trees, chrome, and trouble. You are
+    <b>Dana “Deke” Reyes</b>, the city's best getaway driver, and you owe fixer
+    <b>Vera Solano</b> $5,000. Rival boss <b>Marcus Kade</b> would rather see you
+    gone than paid up. Steal the cars, run the jobs, lose the cops, and buy your
+    way out.</p>
     <button class="btn" id="btn-new">NEW GAME</button>
     <button class="btn ghost" id="btn-continue">CONTINUE</button>
     <button class="btn ghost" id="btn-sound">SOUND: ON</button>
     <div class="controls">
-      <b>WASD</b> move / drive &nbsp;·&nbsp; <b>Mouse</b> look &amp; aim &nbsp;·&nbsp; <b>Shift</b> run &nbsp;·&nbsp; <b>Space</b> jump / handbrake<br>
-      <b>E</b> enter or steal car &nbsp;·&nbsp; <b>Click</b> shoot &nbsp;·&nbsp; <b>R</b> reload &nbsp;·&nbsp; <b>F</b> punch &nbsp;·&nbsp; <b>Esc</b> pause &nbsp;·&nbsp; <b>M</b> mute
+      <b>WASD</b> walk / drive &nbsp;·&nbsp; <b>Mouse</b> look &amp; aim &nbsp;·&nbsp; <b>Shift</b> run &nbsp;·&nbsp; <b>Space</b> jump / handbrake<br>
+      <b>E</b> get in or steal a car &nbsp;·&nbsp; <b>Click</b> shoot &nbsp;·&nbsp; <b>R</b> reload &nbsp;·&nbsp; <b>F</b> punch &nbsp;·&nbsp; <b>Esc</b> pause &nbsp;·&nbsp; <b>M</b> mute
     </div>
   </div>
 </div>

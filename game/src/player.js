@@ -1,35 +1,47 @@
-// Dana "Deke" Reyes on foot: a stylised figure built from boxes, WASD movement
-// relative to the camera, running, jumping, and a third-person camera that
-// orbits with the mouse.
+// Dana "Deke" Reyes on foot: a stylised figure built from boxes. WASD moves
+// relative to the camera, Shift runs, Space jumps, and a third-person camera
+// orbits behind with the mouse. The same figure builder makes pedestrians,
+// cops and rivals with different shirts.
 import * as THREE from 'three';
 import { angleToward, clamp } from './util.js';
 
-const WALK_SPEED = 6;
-const RUN_SPEED = 11;
-const JUMP_SPEED = 8.5;
+const WALK = 6;
+const RUN = 11;
+const JUMP = 8.5;
 const GRAVITY = 24;
 
+// Body-part table: each entry is [size x/y/z, offset x/y/z, material key].
+// The builder walks the table, so a person is one loop, not a dozen meshes.
+const BODY_PARTS = [
+  { size: [0.55, 0.8, 0.32], at: [0, 0.4, 0], mat: 'pants', name: 'legs' },
+  { size: [0.72, 0.85, 0.4], at: [0, 1.22, 0], mat: 'shirt', name: 'torso' },
+  { size: [0.42, 0.42, 0.42], at: [0, 1.88, 0], mat: 'skin', name: 'head' },
+  { size: [0.46, 0.16, 0.46], at: [0, 2.12, 0], mat: 'hair', name: 'hair' },
+  { size: [0.2, 0.75, 0.24], at: [-0.48, 1.22, 0], mat: 'shirt', name: 'armL' },
+  { size: [0.2, 0.75, 0.24], at: [0.48, 1.22, 0], mat: 'shirt', name: 'armR' },
+];
+
+/** A boxy person assembled from the BODY_PARTS table. Returns a Group. */
 export function createPersonMesh(opts = {}) {
-  const shirt = opts.shirt ?? 0xd94f3d;
-  const pants = opts.pants ?? 0x2e3a4d;
-  const skin = opts.skin ?? 0xc98d64;
+  const colours = {
+    shirt: opts.shirt ?? 0xd94f3d,
+    pants: opts.pants ?? 0x2e3a4d,
+    skin: opts.skin ?? 0xc98d64,
+    hair: 0x1a1210,
+  };
   const g = new THREE.Group();
-  const mat = (c) => new THREE.MeshLambertMaterial({ color: c });
-  const legs = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.8, 0.32), mat(pants));
-  legs.position.y = 0.4;
-  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.85, 0.4), mat(shirt));
-  torso.position.y = 1.22;
-  const head = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.42, 0.42), mat(skin));
-  head.position.y = 1.88;
-  const hair = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.16, 0.46), mat(0x1a1210));
-  hair.position.y = 2.12;
-  const armL = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.75, 0.24), mat(shirt));
-  armL.position.set(-0.48, 1.22, 0);
-  const armR = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.75, 0.24), mat(shirt));
-  armR.position.set(0.48, 1.22, 0);
-  g.add(legs, torso, head, hair, armL, armR);
-  g.traverse((m) => { if (m.isMesh) m.castShadow = true; });
-  g.userData.arms = { armL, armR, legs };
+  const parts = {};
+  for (const part of BODY_PARTS) {
+    const mesh = new THREE.Mesh(
+      new THREE.BoxGeometry(part.size[0], part.size[1], part.size[2]),
+      new THREE.MeshLambertMaterial({ color: colours[part.mat] }),
+    );
+    mesh.position.set(part.at[0], part.at[1], part.at[2]);
+    mesh.castShadow = true;
+    g.add(mesh);
+    parts[part.name] = mesh;
+  }
+  g.userData.arms = { armL: parts.armL, armR: parts.armR, legs: parts.legs };
   return g;
 }
 
@@ -55,52 +67,59 @@ export class Player {
   get x() { return this.pos.x; }
   get z() { return this.pos.z; }
 
-  /** On-foot step: axes are camera-relative, look turns the camera. */
+  /** One on-foot step: axes are camera-relative, look turns the camera. */
   step(dt, axes, look, running, jump, city) {
     if (this.invulnerable > 0) this.invulnerable -= dt;
     this.camYaw -= look.dx * 0.0032;
     this.camPitch = clamp(this.camPitch + look.dy * 0.0024, 0.05, 1.1);
-    const targetSpeed = (axes.x !== 0 || axes.y !== 0) ? (running ? RUN_SPEED : WALK_SPEED) : 0;
-    this.speed += (targetSpeed - this.speed) * Math.min(1, dt * 10);
+    const wantSpeed = axes.x !== 0 || axes.y !== 0 ? (running ? RUN : WALK) : 0;
+    this.speed += (wantSpeed - this.speed) * Math.min(1, dt * 10);
     if (this.speed > 0.3) {
       const moveAngle = this.camYaw - Math.atan2(axes.x, axes.y);
       this.yaw = angleToward(this.yaw, moveAngle, dt * 10);
-      const nx = this.pos.x + Math.sin(moveAngle) * this.speed * dt;
-      const nz = this.pos.z + Math.cos(moveAngle) * this.speed * dt;
-      const probe = { x: nx, z: nz };
+      const probe = {
+        x: this.pos.x + Math.sin(moveAngle) * this.speed * dt,
+        z: this.pos.z + Math.cos(moveAngle) * this.speed * dt,
+      };
       city.collideCircle(probe, 0.55);
       this.pos.x = probe.x;
       this.pos.z = probe.z;
       this.walkPhase += dt * this.speed * 1.6;
-      const swing = Math.sin(this.walkPhase) * 0.5 * Math.min(1, this.speed / RUN_SPEED);
+      const swing = Math.sin(this.walkPhase) * 0.5 * Math.min(1, this.speed / RUN);
       const { armL, armR, legs } = this.mesh.userData.arms;
       armL.rotation.x = swing;
       armR.rotation.x = -swing;
       legs.rotation.x = swing * 0.4;
     }
     if (jump && this.grounded) {
-      this.vy = JUMP_SPEED;
+      this.vy = JUMP;
       this.grounded = false;
     }
     if (!this.grounded) {
       this.vy -= GRAVITY * dt;
       this.pos.y += this.vy * dt;
-      if (this.pos.y <= 0) { this.pos.y = 0; this.vy = 0; this.grounded = true; }
+      if (this.pos.y <= 0) {
+        this.pos.y = 0;
+        this.vy = 0;
+        this.grounded = true;
+      }
     }
     this.mesh.rotation.y = this.yaw;
   }
 
-  /** Place the third-person camera behind the player. Returns the camera position. */
+  /** Ease the third-person camera in behind the player. */
   cameraTarget(cam, dt) {
     const cx = this.pos.x - Math.sin(this.camYaw) * this.camDist * Math.cos(this.camPitch);
     const cz = this.pos.z - Math.cos(this.camYaw) * this.camDist * Math.cos(this.camPitch);
     const cy = this.pos.y + 2.2 + Math.sin(this.camPitch) * this.camDist;
-    cam.position.x += (cx - cam.position.x) * Math.min(1, dt * 8);
-    cam.position.y += (cy - cam.position.y) * Math.min(1, dt * 8);
-    cam.position.z += (cz - cam.position.z) * Math.min(1, dt * 8);
+    const ease = Math.min(1, dt * 8);
+    cam.position.x += (cx - cam.position.x) * ease;
+    cam.position.y += (cy - cam.position.y) * ease;
+    cam.position.z += (cz - cam.position.z) * ease;
     cam.lookAt(this.pos.x, this.pos.y + 1.8, this.pos.z);
   }
 
+  /** Take damage (briefly invulnerable afterwards). True if it landed. */
   damage(amount) {
     if (this.invulnerable > 0) return false;
     this.health = Math.max(0, this.health - amount);
@@ -112,6 +131,7 @@ export class Player {
     this.health = Math.min(this.maxHealth, this.health + amount);
   }
 
+  /** Put the player at (x, z), unhurt, on the ground. */
   resetTo(x, z) {
     this.pos.set(x, 0, z);
     this.health = this.maxHealth;
