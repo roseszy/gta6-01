@@ -3,17 +3,130 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Block Dodger</title>
+<title>Solmar Heat — Open-World Crime Game</title>
 <style>
-  html, body { margin: 0; height: 100%; overflow: hidden; background: #11141b; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #0b1020; font-family: 'Segoe UI', system-ui, sans-serif; }
   #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
-  /* Read aloud, never shown: the status line screen readers announce. */
   #status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .hidden { display: none !important; }
+  /* ---------- HUD ---------- */
+  #hud { position: fixed; inset: 0; pointer-events: none; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.7); }
+  #hud-top-left { position: absolute; top: 14px; left: 16px; }
+  #stars { font-size: 26px; letter-spacing: 2px; color: #ffd23e; }
+  #stars .off { color: rgba(255,255,255,.25); }
+  #money { font-size: 26px; font-weight: 800; color: #7dff9a; margin-top: 2px; }
+  #health-wrap { margin-top: 6px; width: 190px; height: 12px; background: rgba(0,0,0,.55); border: 1px solid rgba(255,255,255,.5); border-radius: 6px; overflow: hidden; }
+  #health-bar { height: 100%; width: 100%; background: linear-gradient(90deg, #ff5b5b, #ff9d5b); }
+  #hud-top-right { position: absolute; top: 14px; right: 16px; text-align: right; }
+  #clock { font-size: 22px; font-weight: 700; }
+  #day-label { font-size: 13px; opacity: .85; }
+  #objective { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); text-align: center; max-width: 560px; }
+  #objective-title { font-size: 17px; font-weight: 800; color: #ffd23e; }
+  #objective-text { font-size: 15px; margin-top: 2px; }
+  #objective-dist { font-size: 13px; opacity: .85; }
+  #feed { position: absolute; left: 16px; bottom: 250px; max-width: 380px; font-size: 14px; }
+  #feed div { margin-top: 4px; background: rgba(0,0,0,.45); padding: 4px 8px; border-radius: 4px; }
+  #minimap-wrap { position: absolute; left: 16px; bottom: 16px; border: 2px solid rgba(255,255,255,.65); border-radius: 8px; overflow: hidden; background: #0d1b2e; box-shadow: 0 2px 10px rgba(0,0,0,.5); }
+  #minimap { display: block; }
+  #speedo { position: absolute; right: 16px; bottom: 16px; text-align: right; }
+  #speed { font-size: 44px; font-weight: 900; line-height: 1; }
+  #speed-unit { font-size: 13px; opacity: .8; }
+  #weapon { font-size: 17px; font-weight: 700; margin-top: 4px; }
+  #hint { position: absolute; right: 16px; bottom: 110px; font-size: 13px; text-align: right; opacity: .85; line-height: 1.5; }
+  #crosshair { position: absolute; left: 50%; top: 50%; width: 22px; height: 22px; transform: translate(-50%,-50%); }
+  #crosshair::before, #crosshair::after { content: ''; position: absolute; background: #fff; box-shadow: 0 0 3px #000; }
+  #crosshair::before { left: 10px; top: 0; width: 2px; height: 22px; }
+  #crosshair::after { left: 0; top: 10px; width: 22px; height: 2px; }
+  #toast { position: absolute; left: 50%; top: 34%; transform: translateX(-50%); font-size: 30px; font-weight: 900; color: #ffd23e; text-align: center; }
+  #toast small { display: block; font-size: 17px; color: #fff; font-weight: 600; margin-top: 6px; }
+  /* ---------- Menus ---------- */
+  .menu { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: linear-gradient(180deg, rgba(10,16,40,.55), rgba(10,16,40,.82)); color: #fff; z-index: 10; }
+  .menu-inner { text-align: center; max-width: 640px; padding: 24px; }
+  .game-title { font-size: 64px; font-weight: 900; letter-spacing: 4px; margin: 0; color: #ffd23e; text-shadow: 0 4px 0 #c22e2e, 0 8px 24px rgba(0,0,0,.6); }
+  .game-sub { font-size: 18px; letter-spacing: 6px; color: #7dd8ff; margin: 4px 0 18px; }
+  .story { font-size: 15px; line-height: 1.6; opacity: .92; margin: 0 auto 20px; max-width: 560px; }
+  .btn { pointer-events: auto; cursor: pointer; display: inline-block; margin: 6px; padding: 13px 30px; font-size: 17px; font-weight: 800; letter-spacing: 1px; color: #111; background: #ffd23e; border: none; border-radius: 8px; box-shadow: 0 4px 0 #b98a00; }
+  .btn:active { transform: translateY(3px); box-shadow: 0 1px 0 #b98a00; }
+  .btn.ghost { background: rgba(255,255,255,.14); color: #fff; box-shadow: 0 4px 0 rgba(255,255,255,.25); }
+  .controls { font-size: 13.5px; line-height: 1.9; opacity: .9; margin-top: 18px; }
+  .controls b { color: #ffd23e; }
+  .big-msg { font-size: 44px; font-weight: 900; margin: 0 0 8px; }
+  .big-msg.red { color: #ff5b5b; } .big-msg.gold { color: #ffd23e; }
+  #loading { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: #0b1020; color: #ffd23e; font-size: 20px; font-weight: 700; z-index: 20; }
 </style>
 </head>
 <body>
-<canvas id="game" aria-label="Block Dodger: move the paddle left and right to dodge falling blocks and catch coins"></canvas>
+<canvas id="game" aria-label="Solmar Heat: an open-world crime game in the sun-soaked city of Solmar"></canvas>
 <p id="status" role="status" aria-live="polite"></p>
+<div id="loading">Loading Solmar…</div>
+
+<div id="hud" class="hidden">
+  <div id="hud-top-left">
+    <div id="stars"></div>
+    <div id="money">$0</div>
+    <div id="health-wrap"><div id="health-bar"></div></div>
+  </div>
+  <div id="hud-top-right">
+    <div id="clock">14:00</div>
+    <div id="day-label">Solmar Bay · Day 1</div>
+  </div>
+  <div id="objective">
+    <div id="objective-title"></div>
+    <div id="objective-text"></div>
+    <div id="objective-dist"></div>
+  </div>
+  <div id="feed"></div>
+  <div id="minimap-wrap"><canvas id="minimap" width="220" height="220"></canvas></div>
+  <div id="speedo" class="hidden">
+    <div id="speed">0</div>
+    <div id="speed-unit">MPH</div>
+    <div id="weapon">PISTOL · 12 / ∞</div>
+  </div>
+  <div id="hint">WASD move · Shift run · E enter car · F punch<br>Click shoot · R reload · Esc pause</div>
+  <div id="crosshair" class="hidden"></div>
+  <div id="toast"></div>
+</div>
+
+<div id="menu-title" class="menu">
+  <div class="menu-inner">
+    <h1 class="game-title">SOLMAR HEAT</h1>
+    <div class="game-sub">A SUN-SOAKED OPEN-WORLD CRIME STORY</div>
+    <p class="story">Solmar Bay. Palm trees, chrome, and trouble. You are <b>Dana “Deke” Reyes</b>, a getaway driver
+    who owes fixer <b>Vera Solano</b> $5,000 — and rival crew boss <b>Marcus Kade</b> wants you gone before you can pay it.
+    Steal cars, lose the cops, run the jobs, and buy your way out.</p>
+    <button class="btn" id="btn-new">NEW GAME</button>
+    <button class="btn ghost" id="btn-continue">CONTINUE</button>
+    <button class="btn ghost" id="btn-sound">SOUND: ON</button>
+    <div class="controls">
+      <b>WASD</b> move / drive &nbsp;·&nbsp; <b>Mouse</b> look &amp; aim &nbsp;·&nbsp; <b>Shift</b> run &nbsp;·&nbsp; <b>Space</b> jump / handbrake<br>
+      <b>E</b> enter or steal car &nbsp;·&nbsp; <b>Click</b> shoot &nbsp;·&nbsp; <b>R</b> reload &nbsp;·&nbsp; <b>F</b> punch &nbsp;·&nbsp; <b>Esc</b> pause &nbsp;·&nbsp; <b>M</b> mute
+    </div>
+  </div>
+</div>
+
+<div id="menu-pause" class="menu hidden">
+  <div class="menu-inner">
+    <h2 class="big-msg">PAUSED</h2>
+    <p class="story">Take a breath, Deke. Solmar isn't going anywhere.</p>
+    <button class="btn" id="btn-resume">RESUME</button>
+    <button class="btn ghost" id="btn-save">SAVE GAME</button>
+    <button class="btn ghost" id="btn-restart-mission">RESTART MISSION</button>
+    <button class="btn ghost" id="btn-quit">QUIT TO TITLE</button>
+  </div>
+</div>
+
+<div id="menu-end" class="menu hidden">
+  <div class="menu-inner">
+    <h2 class="big-msg red" id="end-title">BUSTED</h2>
+    <p class="story" id="end-text"></p>
+    <button class="btn" id="btn-end-resume">BACK ON THE STREETS</button>
+    <button class="btn ghost" id="btn-end-quit">QUIT TO TITLE</button>
+  </div>
+</div>
+
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.min.js" } }
+</script>
 <script type="module" src="./src/main.js"></script>
 </body>
 </html>
