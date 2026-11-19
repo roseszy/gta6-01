@@ -1,84 +1,79 @@
 [![gta6-01](https://make.fun/badge/gta6-01.svg)](https://make.fun/bounty/gta6-01)
 [![rank](https://make.fun/badge/gta6-01/roseszy/gta6-01/rank.svg)](https://make.fun/bounty/gta6-01)
 [![reward](https://make.fun/badge/gta6-01/roseszy/gta6-01/reward.svg)](https://make.fun/bounty/gta6-01)
-
 # Solmar Heat
 
-A playable open-world crime game made for the
-[make.fun gta6-01 bounty](https://make.fun/bounty/gta6-01), in the spirit of GTA 6:
-one sun-soaked coastal city, one getaway driver in debt, and six jobs to buy her
-freedom. The city, the characters, the story, the art and the sound are all
-original work — no Rockstar names, logos, characters, maps or assets anywhere.
+An original open-world crime game in the spirit of GTA 6, built for the
+[make.fun](https://make.fun/bounty/gta6-01) bounty "Make GTA 6". It runs
+offline in a desktop browser from static files — no build step, no network
+requests, no downloads at run time.
 
 ## The story
 
-Dana "Deke" Reyes is the best wheelwoman in Solmar Bay — and she owes fixer
-Vera Solano $5,000. Across six missions she steals cars, runs packages, drives
-getaways, takes on rival Marcus Kade's crew, pulls one big score, and delivers
-the payoff with the whole Solmar PD in her mirrors.
+You are Dana "Deke" Reyes, the city's best getaway driver. You owe fixer
+Vera Solano $5,000, and rival boss Marcus Kade would rather see you gone
+than paid up. Steal cars, run six jobs across the sun-soaked coastal city of
+Solmar Bay, lose the cops, and buy your way out.
 
-## How to play
+## Play it
 
 ```sh
 node serve.ts
 ```
 
-Then open <http://localhost:8080> in a desktop browser. Everything runs offline
-from the static files in `game/` — there are no network requests and nothing to
-download.
+Then open http://localhost:8080/ in a desktop browser. A live build is also
+up at https://roseszy.github.io/gta6-01/game/.
 
-| Keys | What they do |
+## Controls
+
+| Key | Action |
 | --- | --- |
-| W A S D | Walk, or drive |
-| Mouse (drag) | Look around / aim |
+| WASD | Move on foot / drive |
 | Shift | Run |
-| Space | Jump, or handbrake while driving |
-| E | Get in a car, steal a car, get out, pick up a package |
-| Click | Fire the pistol |
+| Space | Jump / handbrake |
+| Mouse | Look around (click the game to lock the mouse) |
+| Click | Shoot the pistol |
 | F | Punch |
-| R | Reload |
-| P / Esc | Pause |
+| R | Reload (12-round mag, infinite reserve) |
+| E | Enter / steal a car, interact, exit a car |
 | M | Mute |
+| Esc | Pause |
 
 ## What's in the game
 
-- **The city** — 9×9 blocks of coastal Solmar: downtown towers, beachfront
-  hotels, a marina with piers and boats, palms and streetlights, and a bay to
-  the south. A day clock moves the sun across the sky. Explore on foot or by car.
-- **Traffic and people** — cars follow the street grid, ease off for the car
-  ahead and turn at intersections; pedestrians use the sidewalks and scatter
-  when a car comes at them fast.
-- **Car theft** — walk up to a parked car and take it, or jack one straight out
-  of traffic. The second one brings the cops.
-- **Wanted level** — 0 to 5 stars. Police cars chase and ram; officers on foot
-  run you down and arrest you. Break line of sight and the heat cools off.
-- **Six missions** — with dialogue, a golden beacon to follow and payouts of
-  $300 to $2,500: First Wheels, The Pickup, Getaway Driver, Rival Heat,
-  The Big Score, Paying the Debt.
-- **Combat** — a pistol with a 12-round magazine and a reload, fists, and armed
-  rival gang members who shoot back.
-- **Side work** — 20 cash bundles hidden around the city, and taxi fares from
-  the stand by the Solmar Grand.
-- **HUD and polish** — a live minimap showing traffic, police and the mission
-  marker, wanted stars, money, health, clock, speedometer and a message feed;
-  title, pause and end screens; and a `localStorage` save that keeps your money
-  and mission.
-- **Sound** — 100% synthesized WebAudio: a sunset chord-pad score, engine hum,
-  sirens, gunshots, pickups and stings. No audio files.
+- A 9×9-block coastal city: Solmar Bay, with a beach, marina, palms,
+  pastel buildings and eight named landmarks — Vera's Garage, Solmar Marina,
+  Solmar Grand Hotel, the Azure Penthouse, Solmar General hospital, Solmar PD
+  Central, the Taxi Stand and Club Neon Palms.
+- Six story missions ($300–$2,500, $5,400 in total) with a golden beacon
+  marking each destination: steal a car, run packages, be a getaway driver,
+  fight off Kade's crew, pull the big score, and pay the debt.
+- Wanted system, 0–5 stars: police cruisers spawn, chase and ram you; stay
+  out of sight and the heat cools one star at a time. Get caught and it's
+  BUSTED — you wake up at the hospital.
+- Traffic that drives the street grid, pedestrians on the sidewalks, car
+  stealing, pistol and fist combat, rival gang members who shoot back.
+- Side activities: 20 hidden cash stashes and taxi fares from the stand.
+- HUD with wanted stars, money, health, a clock, objectives with distance,
+  an event feed, a live minimap, a speedometer and a weapon readout.
+- Title, pause and end screens; progress saves to localStorage (CONTINUE on
+  the title screen); synthesized WebAudio sound — engine hum, two-tone
+  police siren, pickup and gunshot blips. No audio files.
+- Deterministic screenshot scenes: `?shot=start|drive|chase|mission&seed=1337`
+  stages a fixed scene and sets `window.__shotReady`. The four images in
+  `screenshots/` are real captures of those scenes.
 
 ## How it's built
 
-- `game/index.html` — the entry point and the HUD.
-- `game/src/` — one module per system: `city`, `player`, `vehicles`,
-  `pedestrians`, `wanted`, `missions`, `combat`, `activities`, `hud`, `audio`,
-  `textures`, `shots`, `input`, `util`, `main`.
-- `game/vendor/three.module.min.js` — three.js r160, vendored.
-- `main.ts` — the make.fun entry program: copies `game/` and `screenshots/`
-  to `/output` and writes `dossier.json`.
-
-The shots in `screenshots/` are real captures of the running game
-(`?shot=start|drive|chase|mission`). You can also play the live build at
-<https://roseszy.github.io/gta6-01/game/>.
+- `game/index.html` + ES modules under `game/src/` (city, vehicles,
+  pedestrians, player, wanted, combat, missions, activities, HUD, audio,
+  input, textures, screenshot scenes).
+- three.js r160, vendored at `game/vendor/three.module.min.js`.
+- `main.ts` (Node 22, stdlib only) copies `game/` and `screenshots/` to the
+  output directory and writes `dossier.json` with the kit's
+  `vendor/makefun-game.ts` library. Run it with
+  `MAKEFUN_OUTPUT_DIR=out node main.ts`.
+- `serve.ts` is a tiny static server for local play.
 
 ## License
 

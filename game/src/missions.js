@@ -1,271 +1,279 @@
-// The story: six jobs for fixer Vera Solano that pay off Deke's $5,000 debt.
-// Each mission is a list of steps — reach a place, steal a car, pick
-// something up, lose the cops, or take out rivals — with a golden beacon in
-// the world marking where to go and a payout at the end.
+// Missions: the six jobs of SOLMAR HEAT, their state machine and the golden
+// beacon that marks the current destination. Pure logic — no DOM, no scene
+// calls at update time — so the headless checks can drive it with plain data.
+// main.js polls update() each frame and performs the side effects the
+// returned events name (spawn rivals, set wanted, pay out, show intros).
+
 import * as THREE from 'three';
-import { dist2 } from './util.js';
 import { ANCHORS } from './city.js';
+import { dist2 } from './util.js';
 
 export const DEBT = 5000;
 
 export const MISSIONS = [
   {
-    id: 1,
     title: 'First Wheels',
     reward: 300,
     intro: 'Vera: "Deke, you owe me five grand. Start simple — take any car on the street and bring it to my garage. Don\'t scratch it."',
     steps: [
-      { type: 'steal', text: 'Steal a car (walk up to one and press E)' },
-      { type: 'driveTo', target: 'garage', radius: 14, text: "Drive it to Vera's Garage" },
+      { type: 'steal', text: 'Steal a car — walk up and press E' },
+      { type: 'driveTo', target: 'garage', text: "Drive it to Vera's Garage" },
     ],
   },
   {
-    id: 2,
     title: 'The Pickup',
     reward: 500,
     intro: 'Vera: "A package is waiting at the marina. Grab it, bring it back — and don\'t ask what\'s inside."',
     steps: [
-      { type: 'reach', target: 'docks', radius: 10, text: 'Go to the Solmar Marina' },
-      { type: 'pickup', target: 'docks', radius: 6, text: 'Pick up the package (press E)' },
-      { type: 'deliver', target: 'garage', radius: 14, text: "Deliver the package to Vera's Garage" },
+      { type: 'reach', target: 'docks', text: 'Go to the Solmar Marina' },
+      { type: 'pickup', target: 'docks', text: 'Pick up the package (press E)' },
+      { type: 'deliver', target: 'garage', text: "Deliver the package to Vera's Garage" },
     ],
   },
   {
-    id: 3,
     title: 'Getaway Driver',
     reward: 700,
-    intro: "Vera: \"Kade's boys tipped off the cops. Lose them, then pick up my client at the Solmar Grand and take him to Club Neon Palms.\"",
+    intro: 'Vera: "Kade\'s boys tipped off the cops. Lose them, then pick up my client at the Solmar Grand and take him to Club Neon Palms."',
     steps: [
-      { type: 'evade', stars: 2, text: 'Lose the 2-star wanted level' },
-      { type: 'reach', target: 'hotel', radius: 10, text: 'Pick up the client at the Solmar Grand' },
-      { type: 'driveTo', target: 'club', radius: 14, text: 'Drive the client to Club Neon Palms' },
+      { type: 'evade', stars: 2, text: 'Lose the cops' },
+      { type: 'pickup', target: 'hotel', text: 'Pick up the client at the Solmar Grand (press E)' },
+      { type: 'driveTo', target: 'club', text: 'Drive the client to Club Neon Palms' },
     ],
   },
   {
-    id: 4,
     title: 'Rival Heat',
     reward: 900,
     intro: 'Vera: "Kade sent his crew to the marina to send a message. Send one back. They\'re armed — so are you."',
     steps: [
-      { type: 'reach', target: 'docks', radius: 12, text: 'Go to the Solmar Marina' },
-      { type: 'eliminate', count: 3, target: 'docks', radius: 30, text: 'Take out the 3 rival gang members' },
-      { type: 'reach', target: 'garage', radius: 14, text: "Report back to Vera's Garage" },
+      { type: 'reach', target: 'docks', text: 'Go to the Solmar Marina' },
+      { type: 'eliminate', target: 'docks', count: 3, text: 'Take out the rival gang members' },
+      { type: 'deliver', target: 'garage', text: "Report back to Vera's Garage" },
     ],
   },
   {
-    id: 5,
     title: 'The Big Score',
     reward: 1500,
     intro: 'Vera: "Three packages, three corners of the city, one penthouse drop. The cops will be all over you — that\'s why I hired the best."',
     steps: [
-      { type: 'pickup', target: 'hotel', radius: 6, text: 'Pick up package 1 at the Solmar Grand (press E)' },
-      { type: 'pickup', target: 'club', radius: 6, text: 'Pick up package 2 at Club Neon Palms (press E)' },
-      { type: 'pickup', target: 'docks', radius: 6, text: 'Pick up package 3 at the Marina (press E)' },
-      { type: 'deliver', target: 'penthouse', radius: 14, text: 'Deliver all three to the Azure Penthouse' },
+      { type: 'pickup', target: 'hotel', text: 'Pick up package 1 at the Solmar Grand (press E)' },
+      { type: 'pickup', target: 'club', text: 'Pick up package 2 at Club Neon Palms (press E)' },
+      { type: 'pickup', target: 'docks', text: 'Pick up package 3 at the Marina (press E)' },
+      { type: 'deliver', target: 'penthouse', text: 'Deliver all three to the Azure Penthouse' },
     ],
   },
   {
-    id: 6,
     title: 'Paying the Debt',
     reward: 2500,
     intro: 'Vera: "Last job, Deke. Take my car to the penthouse with the payoff. Kade will throw everything at you — drive like your freedom depends on it. It does."',
     steps: [
-      { type: 'driveTo', target: 'penthouse', radius: 14, text: 'Drive the payoff to the Azure Penthouse' },
+      { type: 'driveTo', target: 'penthouse', text: 'Drive the payoff to the Azure Penthouse' },
       { type: 'evade', stars: 3, text: 'Lose the cops and finish the job' },
     ],
   },
 ];
 
-/** The golden beacon that marks the mission destination in the world. */
-function makeBeacon() {
-  const g = new THREE.Group();
-  const beam = new THREE.Mesh(
-    new THREE.CylinderGeometry(1.6, 1.6, 90, 12, 1, true),
-    new THREE.MeshBasicMaterial({ color: 0xffd23e, transparent: true, opacity: 0.28, side: THREE.DoubleSide, depthWrite: false }),
-  );
-  beam.position.y = 45;
-  const gem = new THREE.Mesh(
-    new THREE.OctahedronGeometry(1.4),
-    new THREE.MeshBasicMaterial({ color: 0xffd23e }),
-  );
-  gem.position.y = 7;
-  g.add(beam, gem);
-  g.userData.gem = gem;
-  return g;
+export function totalRewards() {
+  return MISSIONS.reduce((n, m) => n + m.reward, 0);
 }
 
 export class MissionManager {
-  constructor(scene) {
-    this.scene = scene;
-    this.index = 0; // mission in MISSIONS
-    this.stepIndex = 0;
-    this.active = false;
-    this.carrying = 0; // packages held
-    this.killsNeeded = 0;
-    this.killsDone = 0;
-    this.evadeTimer = 0;
-    this.done = false;
-    this.beacon = makeBeacon();
-    this.beacon.visible = false;
-    scene.add(this.beacon);
-    this.onEvent = null; // (type, payload) => void; set by main
+  constructor() {
+    this.index = 0;
+    this.step = 0;
+    this.state = 'idle'; // idle | active | between | complete
+    this.betweenTimer = 0;
+    this.zeroTime = 0;
+    this.stepTime = 0;
+    this.eliminated = 0;
+    this.rivalsSpawned = false;
+    this.beacon = null;
+    this.beaconGem = null;
+    this.time = 0;
   }
 
   get mission() {
-    return MISSIONS[this.index] ?? null;
+    return MISSIONS[this.index] || null;
   }
 
-  get step() {
-    return this.mission ? this.mission.steps[this.stepIndex] : null;
+  get currentStep() {
+    const m = this.mission;
+    return m ? m.steps[this.step] : null;
   }
 
-  get markerPos() {
-    const s = this.step;
-    if (!s || !s.target) return null;
-    return ANCHORS[s.target];
+  start() {
+    this.index = 0;
+    this.step = 0;
+    this.state = 'active';
+    this.zeroTime = 0;
+    this.stepTime = 0;
+    this.eliminated = 0;
+    this.rivalsSpawned = false;
+    return this.enterStepEvents();
   }
 
-  emit(type, payload) {
-    if (this.onEvent) this.onEvent(type, payload);
-  }
-
-  /** Begin mission `i` (0-based) from its first step. */
   startMission(i) {
     this.index = i;
-    this.stepIndex = 0;
-    this.carrying = 0;
-    this.killsDone = 0;
-    this.evadeTimer = 0;
-    this.active = true;
-    this.done = false;
-    const m = this.mission;
-    if (m && m.steps[0].type === 'evade') this.armEvade(m.steps[0]);
-    if (m && m.steps[0].type === 'eliminate') this.killsNeeded = m.steps[0].count;
-    this.emit('mission-start', m);
+    this.step = 0;
+    this.state = 'active';
+    this.zeroTime = 0;
+    this.stepTime = 0;
+    this.eliminated = 0;
+    this.rivalsSpawned = false;
+    return this.enterStepEvents();
   }
 
-  /** An evade step starts by putting the cops on the player. */
-  armEvade(step) {
-    this.evadeTimer = 0;
-    this.emit('set-wanted', step.stars || 2);
-  }
-
-  /** Restart the current mission from its first step. */
   restart() {
-    this.startMission(this.index);
+    return this.startMission(this.index);
   }
 
-  /** Advance one step; true when the whole mission finished. */
-  advance() {
-    this.stepIndex += 1;
-    const m = this.mission;
-    if (this.stepIndex >= m.steps.length) {
-      this.active = false;
-      this.emit('mission-complete', m);
-      return true;
-    }
-    const s = this.step;
-    if (s.type === 'evade') this.armEvade(s);
-    if (s.type === 'eliminate') {
-      this.killsNeeded = s.count;
-      this.killsDone = 0;
-      this.emit('spawn-rivals', s.count);
-    }
-    this.emit('step', s);
-    return false;
+  // The destination of the current step, or null for steps with no target.
+  currentTarget() {
+    const s = this.currentStep;
+    if (!s || !s.target) return null;
+    const a = ANCHORS[s.target];
+    return a ? { x: a.x, z: a.z, label: a.label } : null;
   }
 
-  /** The player pressed E on a pickup step: take the package and move on. */
-  onPickup() {
-    const s = this.step;
-    if (!s || s.type !== 'pickup') return false;
-    this.carrying += 1;
-    this.emit('pickup', { carrying: this.carrying });
-    this.advance();
-    return true;
-  }
-
-  /** A rival went down: count it, and move on when the quota is met. */
-  onKill() {
-    const s = this.step;
-    if (!s || s.type !== 'eliminate') return;
-    this.killsDone += 1;
-    this.emit('kill-progress', { done: this.killsDone, needed: this.killsNeeded });
-    if (this.killsDone >= this.killsNeeded) this.advance();
-  }
-
-  /** Getting into a car completes a steal step. */
-  onEnterCar() {
-    const s = this.step;
-    if (s && s.type === 'steal') this.advance();
-  }
-
-  /** Per-frame checks: beacon placement and reach / deliver / evade ends. */
-  update(dt, ctx) {
-    // Spin and bob the beacon gem.
-    this.beacon.userData.gem.rotation.y += dt * 2;
-    this.beacon.userData.gem.position.y = 7 + Math.sin(performance.now() * 0.002) * 0.8;
-    if (!this.active || this.done) {
-      this.beacon.visible = false;
-      return;
-    }
-    const s = this.step;
-    if (!s) return;
-    const px = ctx.car ? ctx.car.pos.x : ctx.player.x;
-    const pz = ctx.car ? ctx.car.pos.z : ctx.player.z;
-    if (s.type === 'evade') {
-      this.evadeTimer += dt;
-      // Four seconds clean after the heat hits zero closes the step.
-      if (ctx.wantedStars <= 0 && this.evadeTimer > 4) this.advance();
-      this.beacon.visible = false;
-      return;
-    }
-    const marker = this.markerPos;
-    if (marker) {
-      this.beacon.visible = true;
-      this.beacon.position.set(marker.x, 0, marker.z);
-    } else {
-      this.beacon.visible = false;
-    }
-    if (s.type === 'reach' || s.type === 'driveTo' || s.type === 'deliver') {
-      const radius = s.radius || 8;
-      const needCar = s.type === 'driveTo';
-      if (dist2(px, pz, marker.x, marker.z) < radius && (!needCar || ctx.car)) {
-        if (s.type === 'deliver') this.carrying = 0;
-        this.advance();
-      }
-    }
-  }
-
-  /** The objective line the HUD shows. */
-  objectiveText() {
-    if (this.done) {
+  // HUD objective line for the current state.
+  objective() {
+    if (this.state === 'complete') {
       return { title: 'DEBT PAID — FREE ROAM', text: 'Solmar is yours now. Collect cash, run fares, stay fast.' };
     }
-    if (!this.active || !this.mission) {
+    if (this.state !== 'active' || !this.mission) {
       return { title: 'FREE ROAM', text: 'Start the next job from the pause menu, or explore Solmar.' };
     }
-    const m = this.mission;
-    const s = this.step;
-    let text = s ? s.text : '';
-    if (s && s.type === 'eliminate') text += ` (${this.killsDone}/${this.killsNeeded})`;
-    if (s && s.type === 'evade') text += ` — ${Math.floor(this.evadeTimer)}s`;
-    return { title: `MISSION ${m.id} — ${m.title}`, text };
+    const s = this.currentStep;
+    let text = s.text;
+    if (s.type === 'eliminate') text += ` (${this.eliminated}/${s.count})`;
+    if (s.type === 'evade') text += ` — ${Math.floor(this.stepTime)}s`;
+    return { title: `MISSION ${this.index + 1} — ${this.mission.title}`, text };
   }
 
-  /** Distance from the player to the current marker, in metres. */
-  markerDistance(ctx) {
-    const marker = this.markerPos;
-    if (!marker) return 0;
-    const px = ctx.car ? ctx.car.pos.x : ctx.player.x;
-    const pz = ctx.car ? ctx.car.pos.z : ctx.player.z;
-    return Math.round(dist2(px, pz, marker.x, marker.z));
+  // Events fired when a step begins (wanted levels, rival spawns, intros).
+  enterStepEvents() {
+    const events = [];
+    const s = this.currentStep;
+    if (!s) return events;
+    if (this.step === 0 && this.mission) {
+      events.push({ type: 'intro', text: this.mission.intro });
+    }
+    if (s.type === 'evade') {
+      events.push({ type: 'setWanted', stars: s.stars || 2 });
+    }
+    if (s.type === 'eliminate') {
+      const t = this.currentTarget();
+      if (t) events.push({ type: 'spawnRivals', x: t.x, z: t.z, count: s.count, label: t.label });
+      this.rivalsSpawned = true;
+    }
+    return events;
   }
 
-  /** The last mission paid out: the debt is gone and the game is free roam. */
-  finishAll() {
-    this.done = true;
-    this.active = false;
-    this.beacon.visible = false;
+  // One frame of mission logic. s: { pos:{x,z}, inCar, interact, wantedStars,
+  // rivalsAlive }. Returns events for main.js to act on.
+  update(dt, s) {
+    this.time += dt;
+    const events = [];
+    if (this.state === 'between') {
+      this.betweenTimer -= dt;
+      if (this.betweenTimer <= 0) {
+        this.index += 1;
+        this.step = 0;
+        this.state = 'active';
+        this.zeroTime = 0;
+        this.stepTime = 0;
+        this.eliminated = 0;
+        this.rivalsSpawned = false;
+        events.push(...this.enterStepEvents());
+      }
+      return events;
+    }
+    if (this.state !== 'active' || !this.mission) return events;
+    const step = this.currentStep;
+    if (!step) return events;
+    this.stepTime += dt;
+
+    let done = false;
+    if (step.type === 'steal') {
+      done = s.inCar === true;
+    } else if (step.type === 'reach' || step.type === 'deliver') {
+      const t = this.currentTarget();
+      if (t && dist2(s.pos.x, s.pos.z, t.x, t.z) < 8) done = true;
+    } else if (step.type === 'driveTo') {
+      const t = this.currentTarget();
+      if (t && s.inCar && dist2(s.pos.x, s.pos.z, t.x, t.z) < 8) done = true;
+    } else if (step.type === 'pickup') {
+      const t = this.currentTarget();
+      if (t && s.interact && dist2(s.pos.x, s.pos.z, t.x, t.z) < 7) done = true;
+    } else if (step.type === 'eliminate') {
+      if (this.rivalsSpawned) {
+        this.eliminated = step.count - (s.rivalsAlive || 0);
+        if ((s.rivalsAlive || 0) <= 0) done = true;
+      }
+    } else if (step.type === 'evade') {
+      if (s.wantedStars === 0) {
+        this.zeroTime += dt;
+        if (this.zeroTime >= 4) done = true;
+      } else {
+        this.zeroTime = 0;
+      }
+    }
+
+    if (!done) return events;
+    this.step += 1;
+    this.zeroTime = 0;
+    this.stepTime = 0;
+    this.eliminated = 0;
+    this.rivalsSpawned = false;
+    if (this.step < this.mission.steps.length) {
+      events.push(...this.enterStepEvents());
+      return events;
+    }
+    // Mission complete: pay out, then move on.
+    events.push({ type: 'payout', amount: this.mission.reward, title: this.mission.title });
+    if (this.index >= MISSIONS.length - 1) {
+      this.state = 'complete';
+      events.push({ type: 'allComplete' });
+    } else {
+      this.state = 'between';
+      this.betweenTimer = 2.5;
+    }
+    return events;
+  }
+
+  // Golden beacon: a tall translucent beam with a spinning octahedron gem.
+  // Built once by main.js; positioned each frame at the current target.
+  createBeacon(scene) {
+    const group = new THREE.Group();
+    const beamMat = new THREE.MeshBasicMaterial({
+      color: 0xffd23f,
+      transparent: true,
+      opacity: 0.28,
+      depthWrite: false,
+    });
+    const beam = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 1.4, 70, 12, 1, true), beamMat);
+    beam.position.y = 35;
+    group.add(beam);
+    const gem = new THREE.Mesh(
+      new THREE.OctahedronGeometry(1.7),
+      new THREE.MeshBasicMaterial({ color: 0xffd23f })
+    );
+    gem.position.y = 9;
+    group.add(gem);
+    group.visible = false;
+    scene.add(group);
+    this.beacon = group;
+    this.beaconGem = gem;
+    return group;
+  }
+
+  updateBeacon(dt) {
+    if (!this.beacon) return;
+    const t = this.currentTarget();
+    const active = this.state === 'active' && !!t;
+    this.beacon.visible = active;
+    if (!active) return;
+    this.beacon.position.set(t.x, 0, t.z);
+    this.beaconGem.rotation.y += dt * 1.6;
+    this.beaconGem.position.y = 9 + Math.sin(this.time * 2.2) * 0.8;
   }
 }

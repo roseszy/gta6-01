@@ -1,85 +1,82 @@
-// Keyboard and mouse: held keys, edge-triggered presses, and camera look
-// from pointer lock (with a drag fallback when the pointer is not locked).
-// The game polls this once a frame and calls endFrame() when it is done.
+// Keyboard + mouse input. Tracks held keys, edge-triggered presses and the
+// mouse deltas used for looking around. Call endFrame() once per game tick
+// so pressed() only fires on the frame the key went down.
+
 export class Input {
-  constructor(canvas) {
-    this.canvas = canvas;
+  constructor() {
     this.keys = new Set();
-    this.pressed = new Set();
-    this.lookX = 0;
-    this.lookY = 0;
+    this.pressedKeys = new Set();
+    this.mouseDX = 0;
+    this.mouseDY = 0;
     this.mouseDown = false;
-    this.clicked = false;
-    this.locked = false;
-
-    window.addEventListener('keydown', (e) => {
-      if (e.repeat) return;
+    this.mouseClicked = false;
+    this._onKeyDown = (e) => {
+      if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
+      if (!this.keys.has(e.code)) this.pressedKeys.add(e.code);
       this.keys.add(e.code);
-      this.pressed.add(e.code);
-      if (e.code === 'Space') e.preventDefault();
-    });
-    window.addEventListener('keyup', (e) => this.keys.delete(e.code));
-    window.addEventListener('blur', () => this.keys.clear());
-
-    canvas.addEventListener('mousedown', (e) => {
-      if (e.button !== 0) return;
-      this.mouseDown = true;
-      this.clicked = true;
-      if (!this.locked && canvas.requestPointerLock) canvas.requestPointerLock();
-    });
-    window.addEventListener('mouseup', (e) => {
-      if (e.button === 0) this.mouseDown = false;
-    });
-    document.addEventListener('pointerlockchange', () => {
-      this.locked = document.pointerLockElement === canvas;
-    });
-    document.addEventListener('mousemove', (e) => {
-      if (this.locked || this.mouseDown) {
-        this.lookX += e.movementX || 0;
-        this.lookY += e.movementY || 0;
+    };
+    this._onKeyUp = (e) => {
+      this.keys.delete(e.code);
+    };
+    this._onMouseMove = (e) => {
+      this.mouseDX += e.movementX || 0;
+      this.mouseDY += e.movementY || 0;
+    };
+    this._onMouseDown = (e) => {
+      if (e.button === 0) {
+        this.mouseDown = true;
+        this.mouseClicked = true;
       }
-    });
-    canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+    };
+    this._onMouseUp = (e) => {
+      if (e.button === 0) this.mouseDown = false;
+    };
+    this._onBlur = () => {
+      this.keys.clear();
+      this.mouseDown = false;
+    };
+    window.addEventListener('keydown', this._onKeyDown);
+    window.addEventListener('keyup', this._onKeyUp);
+    window.addEventListener('mousemove', this._onMouseMove);
+    window.addEventListener('mousedown', this._onMouseDown);
+    window.addEventListener('mouseup', this._onMouseUp);
+    window.addEventListener('blur', this._onBlur);
   }
 
-  /** Is the key held down right now? */
   down(code) {
     return this.keys.has(code);
   }
 
-  /** Was the key pressed since the last endFrame()? */
-  hit(code) {
-    return this.pressed.has(code);
+  pressed(code) {
+    return this.pressedKeys.has(code);
   }
 
-  /** Movement axes in -1..1: x is strafe right, y is forward. */
-  moveAxes() {
-    let x = 0;
-    let y = 0;
-    if (this.down('KeyW') || this.down('ArrowUp')) y += 1;
-    if (this.down('KeyS') || this.down('ArrowDown')) y -= 1;
-    if (this.down('KeyD') || this.down('ArrowRight')) x += 1;
-    if (this.down('KeyA') || this.down('ArrowLeft')) x -= 1;
-    return { x, y };
+  // Mouse deltas since the last call, then reset.
+  consumeMouse() {
+    const dx = this.mouseDX;
+    const dy = this.mouseDY;
+    this.mouseDX = 0;
+    this.mouseDY = 0;
+    return { dx, dy };
   }
 
-  /** Take the look delta built up since the last frame (and clear it). */
-  takeLook() {
-    const out = { dx: this.lookX, dy: this.lookY };
-    this.lookX = 0;
-    this.lookY = 0;
-    return out;
+  // True once, on the frame the left button went down.
+  clicked() {
+    const c = this.mouseClicked;
+    this.mouseClicked = false;
+    return c;
   }
 
-  /** Was the left mouse button clicked since the last call? */
-  takeClick() {
-    const was = this.clicked;
-    this.clicked = false;
-    return was;
-  }
-
-  /** End of frame: forget this frame's edge-triggered presses. */
   endFrame() {
-    this.pressed.clear();
+    this.pressedKeys.clear();
+  }
+
+  dispose() {
+    window.removeEventListener('keydown', this._onKeyDown);
+    window.removeEventListener('keyup', this._onKeyUp);
+    window.removeEventListener('mousemove', this._onMouseMove);
+    window.removeEventListener('mousedown', this._onMouseDown);
+    window.removeEventListener('mouseup', this._onMouseUp);
+    window.removeEventListener('blur', this._onBlur);
   }
 }

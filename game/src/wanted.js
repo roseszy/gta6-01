@@ -1,186 +1,144 @@
-// The wanted system: a heat level of 0–5 stars, police cars that hunt the
-// player down, and officers on foot who try to make an arrest. Crimes raise
-// the heat; staying out of sight while the heat is on lets it cool off one
-// star at a time.
-import { clamp, dist2 } from './util.js';
-import { createCarMesh, DriveCar } from './vehicles.js';
-import { createPersonMesh } from './player.js';
+// Wanted / heat: 0-5 stars. Crimes raise heat; police cruisers spawn by
+// star count and chase/ram the player. Stay out of sight and heat cools one
+// star at a time. Busted when health hits 0 or a cruiser catches you on foot.
 
-export const MAX_STARS = 5;
+import * as THREE from 'three';
+import { clamp, dist2, mulberry32 } from './util.js';
+import { makeCarMesh } from './vehicles.js';
 
-export class WantedSystem {
-  constructor(scene, city, rng) {
+export class Wanted {
+  constructor(scene, city) {
     this.scene = scene;
     this.city = city;
-    this.rng = rng;
     this.stars = 0;
-    this.coolTimer = 0;
-    this.spawnTimer = 0;
-    this.arrestTimer = 0;
-    this.policeCars = [];
-    this.cops = [];
+    this.heat = 0;
+    this.cruisers = [];
+    this.outOfSight = 0;
     this.busted = false;
+    this.catchTimer = 0;
+    this.time = 0;
+    this.rng = mulberry32(0xbadc0de);
+    this.flashPhase = 0;
   }
 
-  /** Raise (or set) the heat. Returns the new star count. */
-  addStars(n) {
-    this.stars = clamp(this.stars + n, 0, MAX_STARS);
-    this.coolTimer = 0;
-    return this.stars;
+  addHeat(n) {
+    this.heat = clamp(this.heat + n, 0, 125);
+    this.stars = clamp(Math.floor(this.heat / 25), 0, 5);
+    if (this.stars > 0) this.outOfSight = 0;
   }
 
-  /** Drop the heat to zero and clear every officer from the streets. */
+  setStars(n) {
+    this.stars = clamp(n, 0, 5);
+    this.heat = this.stars * 25;
+    if (this.stars > 0) this.outOfSight = 0;
+  }
+
   clear() {
     this.stars = 0;
-    this.coolTimer = 0;
-    this.arrestTimer = 0;
-    for (const c of this.policeCars) this.scene.remove(c.mesh);
-    for (const c of this.cops) this.scene.remove(c.mesh);
-    this.policeCars = [];
-    this.cops = [];
+    this.heat = 0;
+    this.outOfSight = 0;
+    this.busted = false;
+    this.catchTimer = 0;
+    for (const c of this.cruisers) this.scene.remove(c.mesh);
+    this.cruisers = [];
   }
 
-  heat() {
-    return this.stars;
-  }
-
-  /** How many cruisers the current heat calls for: 1 at one star, up to 4. */
-  carsForHeat() {
+  cruiserTarget() {
     if (this.stars === 0) return 0;
-    if (this.stars <= 1) return 1;
-    if (this.stars <= 2) return 2;
-    if (this.stars <= 3) return 3;
+    if (this.stars === 1) return 1;
+    if (this.stars === 2) return 2;
+    if (this.stars === 3) return 3;
     return 4;
   }
 
-  /** Send a cruiser in from a street a little way off. */
-  dispatchCar(playerPos) {
-    const mesh = createCarMesh(0x1a1a22, 'police');
-    const angle = this.rng() * Math.PI * 2;
-    const d = 55 + this.rng() * 30;
-    const x = clamp(playerPos.x + Math.sin(angle) * d, 8, 478);
-    const z = clamp(playerPos.z + Math.cos(angle) * d, 8, 478);
-    mesh.position.set(x, 0, z);
+  spawnCruiserNear(x, z) {
+    const pts = this.city.streetPoints;
+    let best = null;
+    let bestScore = -1;
+    for (const p of pts) {
+      const d = dist2(x, z, p.x, p.z);
+      if (d < 55 || d > 130) continue;
+      const score = this.rng();
+      if (score > bestScore) {
+        bestScore = score;
+        best = p;
+      }
+    }
+    const spot = best || { x: clamp(x + 70, 10, 476), z: clamp(z, 10, 476) };
+    const mesh = makeCarMesh(0xf2f2f2, true);
+    mesh.position.set(spot.x, 0, spot.z);
     this.scene.add(mesh);
-    const car = new DriveCar(mesh);
-    car.maxSpeed = 34 + this.stars * 2;
-    car.yaw = Math.atan2(playerPos.x - x, playerPos.z - z);
-    car.isPolice = true;
-    this.policeCars.push(car);
-    return car;
+    this.cruisers.push({ mesh, x: spot.x, z: spot.z, heading: 0, speed: 0, siren: this.rng() });
   }
 
-  /** Send an officer on foot in from nearby. */
-  dispatchOfficer(playerPos) {
-    const mesh = createPersonMesh({ shirt: 0x1c2f55, pants: 0x1c2f55, skin: 0xc98d64 });
-    const angle = this.rng() * Math.PI * 2;
-    mesh.position.set(
-      clamp(playerPos.x + Math.sin(angle) * 26, 8, 478),
-      0,
-      clamp(playerPos.z + Math.cos(angle) * 26, 8, 478),
-    );
-    this.scene.add(mesh);
-    const cop = { mesh, speed: 6.8 + this.stars * 0.3, arrest: 0 };
-    this.cops.push(cop);
-    return cop;
-  }
+  update(dt, player, inCar) {
+    this.time += dt;
+    this.flashPhase += dt;
+    const px = player.pos.x;
+    const pz = player.pos.z;
 
-  /** One step: cool-off, spawn to match the heat, chase, ram, arrest. */
-  step(dt, player, playerCar) {
-    const px = playerCar ? playerCar.pos.x : player.x;
-    const pz = playerCar ? playerCar.pos.z : player.z;
-    // Cool-off: no police within 70 m for 20 s drops a star.
-    if (this.stars > 0) {
-      let nearestPolice = Infinity;
-      for (const c of this.policeCars) nearestPolice = Math.min(nearestPolice, dist2(px, pz, c.pos.x, c.pos.z));
-      for (const c of this.cops) nearestPolice = Math.min(nearestPolice, dist2(px, pz, c.mesh.position.x, c.mesh.position.z));
-      if (nearestPolice > 70) {
-        this.coolTimer += dt;
-        if (this.coolTimer > 20) {
-          this.stars -= 1;
-          this.coolTimer = 0;
+    // Match the cruiser count to the star level.
+    const target = this.cruiserTarget();
+    while (this.cruisers.length < target) this.spawnCruiserNear(px, pz);
+    while (this.cruisers.length > target) {
+      const c = this.cruisers.pop();
+      this.scene.remove(c.mesh);
+    }
+
+    // Heat cools when the player stays far from every cruiser: after 6 s out
+    // of sight it falls steadily, one star at a time, all the way to zero.
+    let nearest = Infinity;
+    for (const c of this.cruisers) nearest = Math.min(nearest, dist2(px, pz, c.x, c.z));
+    if (this.heat > 0) {
+      if (nearest > 55) {
+        this.outOfSight += dt;
+        if (this.outOfSight > 6) {
+          this.heat = Math.max(0, this.heat - 9 * dt);
+          this.stars = clamp(Math.floor(this.heat / 25), 0, 5);
         }
       } else {
-        this.coolTimer = 0;
+        this.outOfSight = 0;
       }
     }
-    // Top the patrol up to match the heat.
-    this.spawnTimer -= dt;
-    if (this.stars > 0 && this.spawnTimer <= 0) {
-      if (this.policeCars.length < this.carsForHeat()) this.dispatchCar({ x: px, z: pz });
-      if (!playerCar && this.cops.length < Math.min(3, this.stars)) this.dispatchOfficer({ x: px, z: pz });
-      this.spawnTimer = 3;
-    }
-    // Cruisers chase: steer at the player and ram to slow them down.
-    for (const car of this.policeCars) {
-      const dx = px - car.pos.x;
-      const dz = pz - car.pos.z;
-      const d = Math.hypot(dx, dz);
-      const wantYaw = Math.atan2(dx, dz);
-      // DriveCar turns right when steer is positive (yaw drops), so flip
-      // the angle error to steer toward the player.
-      const steer = -clamp(((wantYaw - car.yaw + Math.PI * 3) % (Math.PI * 2)) - Math.PI, -1, 1);
-      const throttle = d > 6 ? 1 : 0.2;
-      car.step(dt, throttle, steer, false, this.city, [...this.policeCars]);
-      if (playerCar && d < 4.5) {
-        playerCar.speed *= Math.max(0, 1 - dt * 2.2);
-        playerCar.health = Math.max(0, playerCar.health - dt * 6);
+
+    // Cruisers chase and ram.
+    for (const c of this.cruisers) {
+      const d = dist2(px, pz, c.x, c.z);
+      const want = Math.atan2(px - c.x, pz - c.z);
+      let dh = want - c.heading;
+      while (dh > Math.PI) dh -= Math.PI * 2;
+      while (dh < -Math.PI) dh += Math.PI * 2;
+      c.heading += clamp(dh, -2.2 * dt, 2.2 * dt);
+      const topSpeed = 20 + this.stars * 4.5;
+      const desired = d > 6 ? topSpeed : topSpeed * 0.55;
+      c.speed += clamp(desired - c.speed, -14 * dt, 9 * dt);
+      const nx = c.x + Math.sin(c.heading) * c.speed * dt;
+      const nz = c.z + Math.cos(c.heading) * c.speed * dt;
+      if (!this.city.isBlocked(nx, nz, 2.2)) {
+        c.x = nx;
+        c.z = nz;
+      }
+      c.mesh.position.set(c.x, 0, c.z);
+      c.mesh.rotation.y = c.heading;
+      // Flashing light bar.
+      const phase = Math.floor(this.flashPhase * 6 + c.siren * 10) % 2 === 0;
+      c.mesh.userData.lightRed.material.color.setHex(phase ? 0xff2222 : 0x550000);
+      c.mesh.userData.lightBlue.material.color.setHex(phase ? 0x002266 : 0x2266ff);
+      // Ram: damage the player when a cruiser slams into them.
+      if (d < 3.4 && c.speed > 4) {
+        if (!inCar) player.damage(14 * dt);
+        else player.damage(4 * dt);
+        c.speed *= 0.4;
       }
     }
-    // Officers on foot chase the player; standing next to one for 1.6 s
-    // straight gets Deke arrested.
-    this.busted = false;
-    if (!playerCar) {
-      let closest = null;
-      let closestD = Infinity;
-      for (const cop of this.cops) {
-        const d = dist2(player.x, player.z, cop.mesh.position.x, cop.mesh.position.z);
-        if (d < closestD) {
-          closestD = d;
-          closest = cop;
-        }
-        const dx = player.x - cop.mesh.position.x;
-        const dz = player.z - cop.mesh.position.z;
-        const len = Math.hypot(dx, dz) || 1;
-        cop.mesh.position.x += (dx / len) * cop.speed * dt;
-        cop.mesh.position.z += (dz / len) * cop.speed * dt;
-        cop.mesh.rotation.y = Math.atan2(dx, dz);
-        const swing = Math.sin(performance.now() * 0.012 + cop.mesh.position.x) * 0.5;
-        const { armL, armR } = cop.mesh.userData.arms;
-        armL.rotation.x = swing;
-        armR.rotation.x = -swing;
-      }
-      if (closest && closestD < 1.6) {
-        this.arrestTimer += dt;
-        if (this.arrestTimer > 1.6) this.busted = true;
-      } else {
-        this.arrestTimer = Math.max(0, this.arrestTimer - dt * 2);
-      }
+
+    // Caught on foot: a cruiser sitting on the player busts them.
+    if (!inCar && this.stars > 0 && nearest < 2.6) {
+      this.catchTimer += dt;
+      if (this.catchTimer > 2) this.busted = true;
     } else {
-      this.arrestTimer = 0;
+      this.catchTimer = Math.max(0, this.catchTimer - dt);
     }
-    // Flash the light bars red and blue.
-    const on = Math.floor(performance.now() / 280) % 2 === 0;
-    for (const car of this.policeCars) {
-      const bar = car.mesh.getObjectByName('lightbar');
-      if (bar) bar.material.emissive.setHex(on ? 0x2244ff : 0xff2222);
-    }
-    // When the heat is gone, thin out patrols that fell far behind.
-    if (this.stars === 0) {
-      for (let i = this.policeCars.length - 1; i >= 0; i -= 1) {
-        const c = this.policeCars[i];
-        if (dist2(px, pz, c.pos.x, c.pos.z) > 160) {
-          this.scene.remove(c.mesh);
-          this.policeCars.splice(i, 1);
-        }
-      }
-      for (let i = this.cops.length - 1; i >= 0; i -= 1) {
-        const c = this.cops[i];
-        if (dist2(px, pz, c.mesh.position.x, c.mesh.position.z) > 120) {
-          this.scene.remove(c.mesh);
-          this.cops.splice(i, 1);
-        }
-      }
-    }
+    if (player.health <= 0) this.busted = true;
   }
 }

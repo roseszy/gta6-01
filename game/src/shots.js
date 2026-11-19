@@ -1,102 +1,91 @@
-// Deterministic screenshot scenes behind ?shot=start|drive|chase|mission.
-// Each one plays the real rules forward from a fresh world for a fixed
-// number of steps, steered by a tiny autopilot, so the frame is what real
-// play looks like — and the same seed always gives the same frame.
-import { ANCHORS, nearestStreetPoint } from './city.js';
-import { createCarMesh, DriveCar } from './vehicles.js';
-import { clamp } from './util.js';
+// Deterministic screenshot scenes for ?shot=start|drive|chase|mission.
+// Every placement comes from the seed, so the same ?seed= gives the same
+// frame. main.js renders one frame after staging and sets
+// window.__shotReady = true.
 
-const STEP = 1 / 60;
+import { mulberry32, rngRange } from './util.js';
+import { ANCHORS } from './city.js';
 
-/**
- * Autopilot for the drive and chase scenes: stay on the road by aiming at a
- * point ahead on the nearest street centre line.
- */
-function autopilotDrive(car) {
-  const near = nearestStreetPoint(car.pos.x, car.pos.z);
-  const alongX = Math.abs(Math.sin(car.yaw)) > Math.abs(Math.cos(car.yaw));
-  const targetX = alongX ? car.pos.x + Math.sin(car.yaw) * 12 : near.x;
-  const targetZ = alongX ? near.z : car.pos.z + Math.cos(car.yaw) * 12;
-  const wantYaw = Math.atan2(targetX - car.pos.x, targetZ - car.pos.z);
-  // DriveCar turns right when steer is positive (yaw drops), so flip the
-  // angle error to steer toward the target.
-  const steer = -clamp(((wantYaw - car.yaw + Math.PI * 3) % (Math.PI * 2)) - Math.PI, -1, 1);
-  return { throttle: 1, steer, handbrake: false };
-}
+// Stages one of the four scenes. g is the live game object from main.js:
+// { player, vehicles, wanted, missions, combat, activities, camera, scene }.
+export function stageShot(name, seed, g) {
+  const rng = mulberry32(seed);
+  const garage = ANCHORS.garage;
+  const docks = ANCHORS.docks;
 
-/** Run the world forward `n` fixed steps, driving the car if `drive` is set. */
-function runSteps(game, n, drive) {
-  for (let i = 0; i < n; i += 1) {
-    game.update(STEP, drive ? { carInput: drive(game) } : null);
-  }
-}
-
-/** Park a fresh car in the world and register it as a loose car. */
-function giveCar(game, x, z, yaw, color, kind) {
-  const mesh = createCarMesh(color, kind);
-  mesh.position.set(x, 0, z);
-  mesh.rotation.y = yaw;
-  game.scene.add(mesh);
-  const car = new DriveCar(mesh);
-  car.yaw = yaw;
-  car.maxSpeed = kind === 'sports' ? 48 : 42;
-  game.looseCars.push(car);
-  return car;
-}
-
-/**
- * Stage a screenshot scene on the live game and render one frame.
- * Sets window.__shotReady once the frame is painted.
- */
-export function stageShot(name, game) {
-  const g = game;
-  g.startShotMode();
   if (name === 'start') {
-    // Title screen: the slow cinematic orbit over the city.
-    g.setState('title');
-    g.cinematicCamera();
-    g.render();
-    window.__shotReady = true;
+    // Title view: Deke on foot outside Vera's Garage, camera looking in.
+    g.player.pos.set(garage.x + 14, 0, garage.z + 20);
+    g.player.yaw = Math.atan2(garage.x - g.player.pos.x, garage.z - g.player.pos.z);
+    g.player.pitch = -0.04;
+    g.player.onFoot = true;
+    g.camera.position.set(garage.x + 20, 9, garage.z + 34);
+    g.camera.lookAt(garage.x, 4, garage.z);
     return;
   }
-  g.beginPlay({ silent: true });
-  g.hud.show();
+
   if (name === 'drive') {
-    // A red sports car cruising the avenue, HUD and minimap live.
-    const car = giveCar(g, 216, 150, 0, 0xc23b2e, 'sports');
-    g.enterCar(car, { silent: true });
-    car.speed = 24;
-    runSteps(g, 150, () => autopilotDrive(car));
-    g.updateCamera(STEP);
-    g.render();
-    window.__shotReady = true;
+    // Deke driving fast down a main street, traffic around him.
+    const car = g.vehicles.traffic[0] || null;
+    if (car) {
+      g.vehicles.enterCar(car, g.player);
+      const pc = g.vehicles.playerCar;
+      pc.x = 243;
+      pc.z = 300;
+      pc.heading = 0;
+      pc.speed = 30;
+      pc.mesh.position.set(pc.x, 0, pc.z);
+      pc.mesh.rotation.y = pc.heading;
+      g.player.pos.set(pc.x, 0, pc.z);
+    }
+    g.camera.position.set(243, 7, 300 + 26);
+    g.camera.lookAt(243, 2, 260);
     return;
   }
+
   if (name === 'chase') {
-    // Three stars of heat, two cruisers closing in, getaway mission live.
-    const car = giveCar(g, 270, 200, Math.PI, 0x2e6fc2, 'sports');
-    g.enterCar(car, { silent: true });
-    car.speed = 30;
-    g.wanted.addStars(3);
-    g.wanted.dispatchCar({ x: car.pos.x, z: car.pos.z - 40 });
-    g.wanted.dispatchCar({ x: car.pos.x + 12, z: car.pos.z - 55 });
+    // Two-star chase: Deke driving, two cruisers closing in behind.
+    const car = g.vehicles.traffic[1] || g.vehicles.traffic[0];
+    if (car) {
+      g.vehicles.enterCar(car, g.player);
+      const pc = g.vehicles.playerCar;
+      pc.x = 162;
+      pc.z = 216;
+      pc.heading = Math.PI / 2;
+      pc.speed = 26;
+      pc.mesh.position.set(pc.x, 0, pc.z);
+      pc.mesh.rotation.y = pc.heading;
+      g.player.pos.set(pc.x, 0, pc.z);
+    }
+    g.wanted.setStars(2);
     g.missions.startMission(2);
-    runSteps(g, 200, () => autopilotDrive(car));
-    g.updateCamera(STEP);
-    g.render();
-    window.__shotReady = true;
+    g.wanted.update(0.01, g.player, false);
+    for (const c of g.wanted.cruisers) {
+      c.x = g.player.pos.x - 14 - rngRange(rng, 0, 8);
+      c.z = g.player.pos.z + 12 + rngRange(rng, 0, 8);
+      c.heading = Math.PI / 2;
+      c.mesh.position.set(c.x, 0, c.z);
+      c.mesh.rotation.y = c.heading;
+    }
+    g.camera.position.set(g.player.pos.x - 16, 8, g.player.pos.z + 20);
+    g.camera.lookAt(g.player.pos.x + 10, 2, g.player.pos.z);
     return;
   }
-  // mission: on foot at the marina, rivals closing in, beacon lit overhead.
+
+  // 'mission': Deke on foot at the marina with rivals, beacon overhead.
+  g.player.pos.set(docks.x + 10, 0, docks.z - 14);
+  g.player.yaw = Math.atan2(docks.x - g.player.pos.x, docks.z - g.player.pos.z);
+  g.player.onFoot = true;
+  g.combat.spawnRivals(docks.x, docks.z, 3);
   g.missions.startMission(3);
-  g.missions.stepIndex = 1;
-  g.missions.killsNeeded = 3;
-  g.player.resetTo(ANCHORS.docks.x + 6, ANCHORS.docks.z - 6);
-  g.player.camYaw = Math.atan2(ANCHORS.docks.x - g.player.x, ANCHORS.docks.z - g.player.z);
-  g.combat.spawnRivals({ x: ANCHORS.docks.x, z: ANCHORS.docks.z }, 3);
-  g.player.health = 100;
-  runSteps(g, 120, null);
-  g.updateCamera(STEP);
-  g.render();
-  window.__shotReady = true;
+  g.missions.update(0, {
+    pos: { x: g.player.pos.x, z: g.player.pos.z },
+    inCar: false,
+    interact: false,
+    wantedStars: 0,
+    rivalsAlive: 3,
+  });
+  g.missions.updateBeacon(0);
+  g.camera.position.set(docks.x + 22, 10, docks.z - 30);
+  g.camera.lookAt(docks.x, 6, docks.z);
 }

@@ -1,131 +1,98 @@
-// Procedural textures for Solmar Heat, all painted on canvases at boot:
-// building facades with lit windows, asphalt, sidewalks, sand and the big
-// glowing signs. Nothing is fetched from a file, so the game stays fully
-// offline and every run paints the same look from the same seed.
-import * as THREE from 'three';
-import { rand, randInt } from './util.js';
+// Procedural canvas textures: building facades, asphalt roads and sand.
+// All textures are generated at run time from a 2D canvas, so the game needs
+// no image files and no network requests.
 
-/** Make a canvas, let `draw` paint it, and hand it back as a texture. */
-function paintTexture(w, h, draw) {
-  const c = document.createElement('canvas');
-  c.width = w;
-  c.height = h;
-  draw(c.getContext('2d'), w, h);
-  const tex = new THREE.CanvasTexture(c);
+import * as THREE from 'three';
+
+function canvasTexture(w, h, draw) {
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  draw(ctx, w, h);
+  const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = 4;
   return tex;
 }
 
-/** A building face: flat colour, a grid of windows, some of them lit. */
-export function facadeTexture(rng, base, floors, cols) {
-  return paintTexture(256, 256, (g, w, h) => {
-    g.fillStyle = base;
-    g.fillRect(0, 0, w, h);
-    // Faint vertical bands between the window columns.
-    g.fillStyle = 'rgba(0,0,0,0.12)';
-    for (let x = 0; x < w; x += 32) g.fillRect(x, 0, 4, h);
-    const cellW = Math.floor((w - 16) / cols);
-    const cellH = Math.floor((h - 16) / floors);
-    for (let r = 0; r < floors; r += 1) {
-      for (let c = 0; c < cols; c += 1) {
-        const lit = rng() < 0.45;
-        g.fillStyle = lit ? (rng() < 0.7 ? '#ffd98a' : '#9fd8ff') : '#20283a';
-        g.fillRect(10 + c * cellW, 10 + r * cellH, cellW - 8, cellH - 8);
-        if (lit) {
-          g.fillStyle = 'rgba(255,255,255,0.25)';
-          g.fillRect(10 + c * cellW, 10 + r * cellH, cellW - 8, 4);
-        }
+// A pastel facade with a grid of windows, some lit, some dark.
+export function makeBuildingTexture(baseColor) {
+  return canvasTexture(128, 256, (ctx, w, h) => {
+    ctx.fillStyle = baseColor;
+    ctx.fillRect(0, 0, w, h);
+    // Subtle vertical shading so flat walls read as panels.
+    for (let x = 0; x < w; x += 32) {
+      ctx.fillStyle = 'rgba(0,0,0,0.05)';
+      ctx.fillRect(x, 0, 2, h);
+    }
+    const cols = 4;
+    const rows = 8;
+    const cw = w / cols;
+    const ch = h / rows;
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const lit = ((r * 7 + c * 3) % 5) === 0;
+        ctx.fillStyle = lit ? '#ffe9a8' : 'rgba(20,30,50,0.55)';
+        ctx.fillRect(c * cw + 6, r * ch + 8, cw - 12, ch - 16);
+        ctx.fillStyle = 'rgba(255,255,255,0.25)';
+        ctx.fillRect(c * cw + 6, r * ch + 8, cw - 12, 3);
       }
     }
-    // Street level: dark shopfronts and a door.
-    g.fillStyle = '#181c28';
-    g.fillRect(0, h - 26, w, 26);
-    g.fillStyle = '#3a2a1a';
-    g.fillRect(w / 2 - 14, h - 26, 28, 26);
+    // Ground-floor shopfront band.
+    ctx.fillStyle = 'rgba(0,0,0,0.18)';
+    ctx.fillRect(0, h - 26, w, 26);
   });
 }
 
-/** A flat roof: a rim line and a few rooftop boxes. */
-export function roofTexture(rng, base) {
-  return paintTexture(128, 128, (g, w, h) => {
-    g.fillStyle = base;
-    g.fillRect(0, 0, w, h);
-    g.strokeStyle = 'rgba(0,0,0,0.35)';
-    g.lineWidth = 6;
-    g.strokeRect(3, 3, w - 6, h - 6);
-    g.fillStyle = 'rgba(255,255,255,0.10)';
-    for (let i = 0; i < 5; i += 1) {
-      g.fillRect(randInt(rng, 8, w - 30), randInt(rng, 8, h - 30), randInt(rng, 10, 26), randInt(rng, 8, 20));
+// Dark asphalt with a dashed centre line and faint tyre wear.
+export function makeRoadTexture() {
+  return canvasTexture(128, 128, (ctx, w, h) => {
+    ctx.fillStyle = '#33363b';
+    ctx.fillRect(0, 0, w, h);
+    for (let i = 0; i < 220; i++) {
+      ctx.fillStyle = 'rgba(255,255,255,0.03)';
+      ctx.fillRect(Math.random() * w, Math.random() * h, 2, 2);
+    }
+    ctx.fillStyle = '#e8d24a';
+    ctx.fillRect(w / 2 - 2, 0, 4, 34);
+    ctx.fillRect(w / 2 - 2, 64, 4, 34);
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.fillRect(4, 0, 2, h);
+    ctx.fillRect(w - 6, 0, 2, h);
+  });
+}
+
+// Pale sand with speckles.
+export function makeSandTexture() {
+  return canvasTexture(128, 128, (ctx, w, h) => {
+    ctx.fillStyle = '#e8d5a3';
+    ctx.fillRect(0, 0, w, h);
+    for (let i = 0; i < 320; i++) {
+      const shade = Math.random() < 0.5 ? 'rgba(120,90,40,0.12)' : 'rgba(255,255,255,0.18)';
+      ctx.fillStyle = shade;
+      ctx.fillRect(Math.random() * w, Math.random() * h, 2, 2);
     }
   });
 }
 
-/** Asphalt: dark tarmac, a yellow centre line and white edge lines. */
-export function asphaltTexture() {
-  return paintTexture(128, 128, (g, w, h) => {
-    g.fillStyle = '#33363d';
-    g.fillRect(0, 0, w, h);
-    g.fillStyle = '#2b2e35';
-    for (let i = 0; i < 40; i += 1) {
-      g.fillRect(Math.floor(Math.random() * w), Math.floor(Math.random() * h), 3, 3);
-    }
-    g.fillStyle = '#c9a227';
-    g.fillRect(w / 2 - 2, 0, 4, h);
-    g.fillStyle = '#d8d8d8';
-    g.fillRect(4, 0, 3, h);
-    g.fillRect(w - 7, 0, 3, h);
-  });
-}
-
-/** Pale sidewalk slabs with a grid of joints. */
-export function pavementTexture() {
-  return paintTexture(128, 128, (g, w, h) => {
-    g.fillStyle = '#9a938a';
-    g.fillRect(0, 0, w, h);
-    g.strokeStyle = 'rgba(0,0,0,0.25)';
-    g.lineWidth = 2;
-    for (let i = 0; i <= 4; i += 1) {
-      g.beginPath();
-      g.moveTo(0, (i * h) / 4);
-      g.lineTo(w, (i * h) / 4);
-      g.stroke();
-      g.beginPath();
-      g.moveTo((i * w) / 4, 0);
-      g.lineTo((i * w) / 4, h);
-      g.stroke();
-    }
-  });
-}
-
-/** Warm beach sand, speckled. */
-export function sandTexture(rng) {
-  return paintTexture(128, 128, (g, w, h) => {
-    g.fillStyle = '#e8cf9e';
-    g.fillRect(0, 0, w, h);
-    for (let i = 0; i < 260; i += 1) {
-      g.fillStyle = rng() < 0.5 ? 'rgba(190,160,110,0.5)' : 'rgba(255,240,200,0.5)';
-      g.fillRect(Math.floor(rng() * w), Math.floor(rng() * h), 2, 2);
-    }
-  });
-}
-
-/** A glowing billboard: big name, small subtitle, coloured frame. */
-export function signTexture(text, sub, bg, fg) {
-  return paintTexture(512, 128, (g, w, h) => {
-    g.fillStyle = bg;
-    g.fillRect(0, 0, w, h);
-    g.strokeStyle = fg;
-    g.lineWidth = 6;
-    g.strokeRect(6, 6, w - 12, h - 12);
-    g.fillStyle = fg;
-    g.font = '900 56px system-ui, sans-serif';
-    g.textAlign = 'center';
-    g.textBaseline = 'middle';
-    g.fillText(text, w / 2, sub ? h / 2 - 14 : h / 2);
-    if (sub) {
-      g.font = '600 26px system-ui, sans-serif';
-      g.fillText(sub, w / 2, h / 2 + 34);
+// Flat sea blue with a soft light gradient, for the water plane.
+export function makeWaterTexture() {
+  return canvasTexture(128, 128, (ctx, w, h) => {
+    const grad = ctx.createLinearGradient(0, 0, 0, h);
+    grad.addColorStop(0, '#2f7fc2');
+    grad.addColorStop(1, '#1d5a8f');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, w, h);
+    ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+    for (let y = 12; y < h; y += 22) {
+      ctx.beginPath();
+      for (let x = 0; x <= w; x += 8) {
+        const yy = y + Math.sin(x * 0.2 + y) * 2;
+        if (x === 0) ctx.moveTo(x, yy);
+        else ctx.lineTo(x, yy);
+      }
+      ctx.stroke();
     }
   });
 }
